@@ -42,9 +42,7 @@ import io.github.eightbrows.CallTimeChecker.data.CallLogSync
 import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.logic.CallDetail
 import io.github.eightbrows.CallTimeChecker.logic.CallRecord
-import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_EXCLUDE_PREFIXES
 import io.github.eightbrows.CallTimeChecker.logic.Result
-import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
 import io.github.eightbrows.CallTimeChecker.logic.currentPeriod
@@ -55,19 +53,6 @@ import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-
-/**
- * spec: docs/spec.md 5.7 初期値。設定画面 (5.7) は未実装のため暫定固定値を使用する。
- * プラン形式は「月間定額型」相当（monthlyFreeSec のみ正、perCallFreeSec=0）。
- */
-private val DEFAULT_SETTINGS = Settings(
-    monthlyFreeSec = 70 * 60,
-    perCallFreeSec = 0,
-    unitSec = 30,
-    unitPrice = 22,
-    excludePrefixes = DEFAULT_EXCLUDE_PREFIXES
-)
-private const val DEFAULT_START_DAY = 1
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

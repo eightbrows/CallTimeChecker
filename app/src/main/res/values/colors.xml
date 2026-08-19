@@ -7,4 +7,11 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- spec: docs/spec.md 5.5.3 ウィジェット配色 -->
+    <color name="widget_bg_normal">#FFFFFFFF</color>
+    <color name="widget_bg_warning">#FFFFA000</color>
+    <color name="widget_bg_over">#FFD32F2F</color>
+    <color name="widget_text_normal">#FF000000</color>
+    <color name="widget_text_on_color">#FFFFFFFF</color>
 </resources>

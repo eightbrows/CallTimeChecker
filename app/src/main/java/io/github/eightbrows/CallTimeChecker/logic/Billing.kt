@@ -81,3 +81,42 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
         billedCallCount = billedCallCount
     )
 }
+
+/** spec: docs/spec.md 5.6 内訳リストの1件分の判定結果（定額内 / 課金 / 除外 / 未応答） */
+data class CallDetail(
+    val record: CallRecord,
+    val excluded: Boolean,
+    val billedSec: Int
+)
+
+/**
+ * spec: docs/spec.md 5.6 内訳リスト用。calculate() と同じアルゴリズム（5.4.3）を通話ごとに適用し、
+ * 各通話の判定結果を返す。calculate() の集計結果とは独立に計算するため、calculate() 自体は変更しない。
+ */
+fun calculateDetails(records: List<CallRecord>, s: Settings): List<CallDetail> {
+    var pool = s.monthlyFreeSec
+    val details = mutableListOf<CallDetail>()
+
+    for (r in records.sortedBy { it.dateMillis }) {
+        if (isExcluded(r.number, s.excludePrefixes)) {
+            details += CallDetail(r, excluded = true, billedSec = 0)
+            continue
+        }
+        if (r.durationSec == 0) {
+            details += CallDetail(r, excluded = false, billedSec = 0)
+            continue
+        }
+
+        val over = maxOf(0, r.durationSec - s.perCallFreeSec)
+        if (over == 0) {
+            details += CallDetail(r, excluded = false, billedSec = 0)
+            continue
+        }
+
+        val units = ceilDiv(over, s.unitSec) * s.unitSec
+        val consumed = minOf(units, pool)
+        pool -= consumed
+        details += CallDetail(r, excluded = false, billedSec = units - consumed)
+    }
+    return details
+}

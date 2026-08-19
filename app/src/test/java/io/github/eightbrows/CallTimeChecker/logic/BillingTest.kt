@@ -309,4 +309,54 @@ class BillingTest {
         assertEquals(150, result.billedSec)
         assertEquals(110, result.amount)
     }
+
+    // --- calculateDetails: 内訳リスト用の通話ごとの判定結果 ---
+
+    @Test
+    fun `calculateDetails marks an excluded call and does not bill it`() {
+        val details = calculateDetails(
+            listOf(record(1, 600, number = "0570-000-000")),
+            settings(monthlyFreeSec = 90, unitSec = 30)
+        )
+        assertEquals(1, details.size)
+        assertTrue(details[0].excluded)
+        assertEquals(0, details[0].billedSec)
+    }
+
+    @Test
+    fun `calculateDetails marks a zero-duration call as unbilled and not excluded`() {
+        val details = calculateDetails(listOf(record(1, 0)), settings(monthlyFreeSec = 90, unitSec = 30))
+        assertFalse(details[0].excluded)
+        assertEquals(0, details[0].billedSec)
+    }
+
+    @Test
+    fun `calculateDetails marks a call fully within free time as unbilled`() {
+        val details = calculateDetails(listOf(record(1, 200)), settings(perCallFreeSec = 300, unitSec = 30))
+        assertFalse(details[0].excluded)
+        assertEquals(0, details[0].billedSec)
+    }
+
+    @Test
+    fun `calculateDetails per-call billedSec sums to calculate() billedSec for example A`() {
+        val records = listOf(
+            record(1, 180), // A 3:00
+            record(2, 300), // B 5:00
+            record(3, 310), // C 5:10
+            record(4, 460)  // D 7:40
+        )
+        val s = settings(perCallFreeSec = 300, unitSec = 30, unitPrice = 22)
+        val details = calculateDetails(records, s)
+        assertEquals(listOf(0, 0, 30, 180), details.map { it.billedSec })
+        assertEquals(calculate(records, s).billedSec, details.sumOf { it.billedSec })
+    }
+
+    @Test
+    fun `calculateDetails reflects quota depletion across calls, matching calculate()`() {
+        val records = listOf(record(1, 90), record(2, 30))
+        val s = settings(monthlyFreeSec = 90, unitSec = 30)
+        val details = calculateDetails(records, s)
+        assertEquals(listOf(0, 30), details.map { it.billedSec })
+        assertEquals(calculate(records, s).billedSec, details.sumOf { it.billedSec })
+    }
 }

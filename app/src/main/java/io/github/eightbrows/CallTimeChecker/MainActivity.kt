@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,12 +41,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.github.eightbrows.CallTimeChecker.data.CallLogSync
 import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
+import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
 import io.github.eightbrows.CallTimeChecker.logic.CallDetail
 import io.github.eightbrows.CallTimeChecker.logic.CallRecord
 import io.github.eightbrows.CallTimeChecker.logic.Result
+import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
 import io.github.eightbrows.CallTimeChecker.logic.currentPeriod
+import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
+import io.github.eightbrows.CallTimeChecker.ui.SettingsScreen
 import io.github.eightbrows.CallTimeChecker.ui.theme.CallTimeCheckerTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,12 +65,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val dbHelper = CallRecordDbHelper(applicationContext)
+        val settingsRepository = SettingsRepository(applicationContext)
 
         setContent {
             CallTimeCheckerTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     CallTimeCheckerApp(
                         dbHelper = dbHelper,
+                        settingsRepository = settingsRepository,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -74,23 +81,40 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private sealed interface Screen {
+    data object Main : Screen
+    data object Settings : Screen
+}
+
+/** spec: docs/spec.md 12 未決事項「内訳リストに『課金対象のみ / 全件』フィルタ機能」。UI表示上の絞り込みのみで Billing.kt には影響しない */
+private enum class BreakdownFilter { ALL, BILLED_ONLY }
+
 private sealed interface UiState {
     data object NoPermission : UiState
     data object Loading : UiState
     data class Loaded(
         val period: Pair<Long, Long>,
         val result: Result,
-        val details: List<CallDetail>
+        val details: List<CallDetail>,
+        val settings: Settings
     ) : UiState
     data class Error(val message: String) : UiState
 }
 
-/** spec: docs/spec.md 5.6 アプリ本体（サマリ表示・内訳リスト・権限要求） */
+/** spec: docs/spec.md 5.6 アプリ本体（サマリ表示・内訳リスト・権限要求・設定画面への遷移） */
 @Composable
-private fun CallTimeCheckerApp(dbHelper: CallRecordDbHelper, modifier: Modifier = Modifier) {
+private fun CallTimeCheckerApp(
+    dbHelper: CallRecordDbHelper,
+    settingsRepository: SettingsRepository,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val zone = remember { ZoneId.systemDefault() }
+
+    var screen by remember { mutableStateOf<Screen>(Screen.Main) }
+    var appSettings by remember { mutableStateOf(settingsRepository.load()) }
+    var breakdownFilter by remember { mutableStateOf(BreakdownFilter.ALL) }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -115,13 +139,14 @@ private fun CallTimeCheckerApp(dbHelper: CallRecordDbHelper, modifier: Modifier 
             withContext(Dispatchers.IO) {
                 CallLogSync(context.contentResolver, dbHelper).sync()
             }
-            val period = currentPeriod(DEFAULT_START_DAY, zone)
+            val billingSettings = toBillingSettings(appSettings)
+            val period = currentPeriod(appSettings.startDay, zone)
             val records = withContext(Dispatchers.IO) {
                 dbHelper.queryRange(period.first, period.second)
             }
-            val result = calculate(records, DEFAULT_SETTINGS)
-            val details = calculateDetails(records, DEFAULT_SETTINGS)
-            state = UiState.Loaded(period, result, details)
+            val result = calculate(records, billingSettings)
+            val details = calculateDetails(records, billingSettings)
+            state = UiState.Loaded(period, result, details, billingSettings)
         } catch (e: Exception) {
             state = UiState.Error(e.message ?: "更新に失敗しました")
         }
@@ -131,16 +156,36 @@ private fun CallTimeCheckerApp(dbHelper: CallRecordDbHelper, modifier: Modifier 
         if (hasPermission) refresh()
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        when (val s = state) {
-            is UiState.NoPermission -> PermissionRequest {
-                permissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
+    when (screen) {
+        is Screen.Settings -> SettingsScreen(
+            current = appSettings,
+            onSave = { updated ->
+                appSettings = updated
+                settingsRepository.save(updated)
+                screen = Screen.Main
+                scope.launch { refresh() }
+            },
+            onBack = { screen = Screen.Main },
+            modifier = modifier
+        )
+        is Screen.Main -> Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+            when (val s = state) {
+                is UiState.NoPermission -> PermissionRequest {
+                    permissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
+                }
+                is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                is UiState.Error -> ErrorView(s.message) { scope.launch { refresh() } }
+                is UiState.Loaded -> LoadedContent(
+                    state = s,
+                    zone = zone,
+                    filter = breakdownFilter,
+                    onFilterChange = { breakdownFilter = it },
+                    onRefresh = { scope.launch { refresh() } },
+                    onOpenSettings = { screen = Screen.Settings }
+                )
             }
-            is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            is UiState.Error -> ErrorView(s.message) { scope.launch { refresh() } }
-            is UiState.Loaded -> LoadedContent(s, zone) { scope.launch { refresh() } }
         }
     }
 }
@@ -173,14 +218,54 @@ private fun ErrorView(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun LoadedContent(state: UiState.Loaded, zone: ZoneId, onRefresh: () -> Unit) {
+private fun LoadedContent(
+    state: UiState.Loaded,
+    zone: ZoneId,
+    filter: BreakdownFilter,
+    onFilterChange: (BreakdownFilter) -> Unit,
+    onRefresh: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
     Column(Modifier.fillMaxSize()) {
-        SummarySection(state.period, state.result, zone)
+        SummarySection(state.period, state.result, state.settings, zone)
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onRefresh) { Text("手動更新") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onRefresh) { Text("手動更新") }
+            Button(onClick = onOpenSettings) { Text("設定") }
+        }
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
-        BreakdownList(state.details, modifier = Modifier.weight(1f))
+        BreakdownFilterRow(filter, onFilterChange)
+        val filteredDetails = when (filter) {
+            BreakdownFilter.ALL -> state.details
+            BreakdownFilter.BILLED_ONLY -> state.details.filter { it.billedSec > 0 }
+        }
+        BreakdownList(filteredDetails, state.settings, modifier = Modifier.weight(1f))
+    }
+}
+
+/** spec: docs/spec.md 12 未決事項「内訳リストに『課金対象のみ / 全件』フィルタ機能」 */
+@Composable
+private fun BreakdownFilterRow(filter: BreakdownFilter, onFilterChange: (BreakdownFilter) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterOptionButton("全件", selected = filter == BreakdownFilter.ALL) {
+            onFilterChange(BreakdownFilter.ALL)
+        }
+        FilterOptionButton("課金対象のみ", selected = filter == BreakdownFilter.BILLED_ONLY) {
+            onFilterChange(BreakdownFilter.BILLED_ONLY)
+        }
+    }
+}
+
+@Composable
+private fun FilterOptionButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Button(onClick = onClick) { Text(label) }
+    } else {
+        OutlinedButton(onClick = onClick) { Text(label) }
     }
 }
 
@@ -189,10 +274,10 @@ private val DATETIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern(
 
 /** spec: docs/spec.md 5.6 サマリ（積算通話時間、定額枠、残り時間、概算料金、集計期間） */
 @Composable
-private fun SummarySection(period: Pair<Long, Long>, result: Result, zone: ZoneId) {
+private fun SummarySection(period: Pair<Long, Long>, result: Result, settings: Settings, zone: ZoneId) {
     val startDate = Instant.ofEpochMilli(period.first).atZone(zone).toLocalDate()
     val endDate = Instant.ofEpochMilli(period.second - 1).atZone(zone).toLocalDate()
-    val quotaSec = DEFAULT_SETTINGS.monthlyFreeSec
+    val quotaSec = settings.monthlyFreeSec
     val remainingSec = (quotaSec - result.countedSec).coerceAtLeast(0)
 
     Column {
@@ -216,23 +301,23 @@ private fun SummarySection(period: Pair<Long, Long>, result: Result, zone: ZoneI
 
 /** spec: docs/spec.md 5.6 内訳リスト（日時、番号、通話時間、判定結果、課金対象秒数） */
 @Composable
-private fun BreakdownList(details: List<CallDetail>, modifier: Modifier = Modifier) {
+private fun BreakdownList(details: List<CallDetail>, settings: Settings, modifier: Modifier = Modifier) {
     if (details.isEmpty()) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text("この期間の通話はありません")
+            Text("該当する通話はありません")
         }
         return
     }
     LazyColumn(modifier = modifier.fillMaxWidth()) {
         items(details.sortedByDescending { it.record.dateMillis }) { detail ->
-            BreakdownRow(detail)
+            BreakdownRow(detail, settings)
             HorizontalDivider()
         }
     }
 }
 
 @Composable
-private fun BreakdownRow(detail: CallDetail) {
+private fun BreakdownRow(detail: CallDetail, settings: Settings) {
     val zone = remember { ZoneId.systemDefault() }
     val record: CallRecord = detail.record
     val dateTime = remember(record.dateMillis) {
@@ -241,7 +326,7 @@ private fun BreakdownRow(detail: CallDetail) {
     val judgement = when {
         detail.excluded -> "除外"
         record.durationSec == 0 -> "未応答"
-        detail.billedSec > 0 -> "課金 ¥${detail.billedSec / DEFAULT_SETTINGS.unitSec * DEFAULT_SETTINGS.unitPrice}"
+        detail.billedSec > 0 -> "課金 ¥${detail.billedSec / settings.unitSec * settings.unitPrice}"
         else -> "定額内"
     }
 

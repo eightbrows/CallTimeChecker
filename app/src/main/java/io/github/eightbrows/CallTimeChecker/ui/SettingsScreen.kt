@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import io.github.eightbrows.CallTimeChecker.BuildConfig
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
 import io.github.eightbrows.CallTimeChecker.logic.PlanType
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
@@ -151,6 +152,12 @@ fun SettingsScreen(
                 onSave(effectiveAppSettings(raw))
             }) { Text("保存") }
         }
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            "バージョン: ${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }
 

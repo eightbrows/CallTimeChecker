@@ -49,3 +49,7 @@ gradlew.bat clean
 - `app/src/androidTest/` — instrumented tests (JUnit4 + Espresso + Compose UI test).
 
 Since there is no existing feature architecture (data layer, navigation, DI, networking, etc.), decide and establish these patterns deliberately when adding the first real feature rather than assuming a convention from elsewhere in the file tree.
+
+## Git運用
+
+- git commitはユーザー(Yohei)が手動で実施する。Claude Codeは指示がない限りcommitしないこと

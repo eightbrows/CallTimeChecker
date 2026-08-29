@@ -61,7 +61,7 @@
 | 項目 | 内容 |
 |---|---|
 | minSdk | 26 (Android 8.0) |
-| targetSdk | 35 |
+| targetSdk | 37（targetSdk 37 = Android 17（API level 37、コードネーム Cinnamon Bun、2026年6月16日リリース）。READ_CALL_LOG・CallLog・SharedPreferencesの挙動に直接影響する変更点は確認されていない（ACCESS_LOCAL_NETWORK権限必須化・SMS OTP遅延・大画面UI強制・リフレクション制限などのAndroid 17新規変更点は、いずれも本アプリの機能範囲外）） |
 | 言語 | Kotlin |
 | 日時 API | `java.time`（API 26 以降でネイティブ利用可能。desugaring 不要） |
 | DB | Room または SQLiteOpenHelper |

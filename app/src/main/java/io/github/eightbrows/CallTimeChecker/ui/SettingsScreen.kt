@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.eightbrows.CallTimeChecker.BuildConfig
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
+import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_EXCLUDE_PREFIXES
 import io.github.eightbrows.CallTimeChecker.logic.PlanType
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
 import io.github.eightbrows.CallTimeChecker.logic.effectiveAppSettings
@@ -135,6 +136,15 @@ fun SettingsScreen(
             minLines = 4,
             modifier = Modifier.fillMaxWidth()
         )
+        Spacer(Modifier.height(8.dp))
+
+        // 保存済みリストは初期値が更新されても自動では追従しないため（5.3.2 の初期値変更時など）、
+        // 明示的に初期値へ戻す手段を用意する。押した時点では入力欄を書き換えるだけで、確定は「保存」。
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = {
+                excludeText = excludePrefixesToText(DEFAULT_EXCLUDE_PREFIXES)
+            }) { Text("初期値に戻す") }
+        }
         Spacer(Modifier.height(24.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

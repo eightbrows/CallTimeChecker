@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.util.Log
+import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import io.github.eightbrows.CallTimeChecker.MainActivity
@@ -37,6 +38,32 @@ const val ACTION_SETTINGS_CHANGED = "io.github.eightbrows.CallTimeChecker.widget
 
 private const val MIN_UPDATING_DISPLAY_MILLIS = 500L
 private val EXECUTOR = Executors.newSingleThreadExecutor()
+
+/**
+ * spec: docs/spec.md 5.5.1 line1（例: "42分 / 70分 (3件)" / "通話 128分 (4件)"）末尾の
+ * 件数表記を切り出すための正規表現。WidgetPresentation.presentWidget() 自体は変更せず、
+ * 3行ラベル付きレイアウトへの割り当てはこの Provider 側でのみ行う。
+ */
+private val CALL_COUNT_SUFFIX_REGEX = Regex("\\((\\d+)件\\)$")
+
+/**
+ * spec: docs/spec.md 5.5.1 line2（超過時は "¥352 (超過 8分)"）から、金額部分と超過量を分離するための正規表現。
+ * 金額行は "¥352" のみのシンプルな表示にし、超過量（"8分"）は「超過」ラベル付きの独立した4行目に出す。
+ */
+private val OVERAGE_SUFFIX_REGEX = Regex("^(.+?)\\s*\\(超過 (.+?)\\)$")
+
+/** NORMAL状態で色を切り替える対象（4行×ラベル/値）のビューID一覧 */
+private val NORMAL_STATE_TEXT_VIEW_IDS = listOf(
+    R.id.widget_time_label, R.id.widget_time_value,
+    R.id.widget_count_label, R.id.widget_count_value,
+    R.id.widget_amount_label, R.id.widget_amount_value,
+    R.id.widget_overage_label, R.id.widget_overage_value
+)
+
+/** ラベル付き行レイアウトのうち、状態表示時に隠す必要があるビューID一覧 */
+private val LABEL_VIEW_IDS = listOf(
+    R.id.widget_time_label, R.id.widget_count_label, R.id.widget_amount_label
+)
 
 /**
  * spec: docs/spec.md 7.2 設定変更時のトリガー。SettingsRepository.save() 完了時に呼び出す想定。
@@ -151,8 +178,27 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             val content = presentWidget(result, settings)
 
             val views = RemoteViews(context.packageName, R.layout.widget_call_time)
-            views.setTextViewText(R.id.widget_line1, content.line1)
-            views.setTextViewText(R.id.widget_line2, content.line2)
+            restoreNormalLayout(views)
+
+            // spec 5.5.1: WidgetPresentation.presentWidget() の line1/line2 自体は変更せず、
+            // 「使用/件数/金額/超過」の4行ラベル付きレイアウトへの割り当てだけをここで行う
+            val (timeText, countText) = splitLine1(content.line1)
+            views.setTextViewText(R.id.widget_time_value, timeText)
+            views.setTextViewText(R.id.widget_count_value, countText)
+
+            // 超過注記は金額行に混ぜず独立した4行目に出す。超過なしの場合は行ごと GONE。
+            // ホストはビューを再利用するため、VISIBLE/GONE は毎回必ず両方向を明示的に指定する。
+            val overageMatch = OVERAGE_SUFFIX_REGEX.find(content.line2)
+            if (overageMatch != null) {
+                views.setTextViewText(R.id.widget_amount_value, overageMatch.groupValues[1])
+                views.setTextViewText(R.id.widget_overage_value, overageMatch.groupValues[2])
+                views.setViewVisibility(R.id.widget_overage_row, View.VISIBLE)
+            } else {
+                views.setTextViewText(R.id.widget_amount_value, content.line2)
+                views.setTextViewText(R.id.widget_overage_value, "")
+                views.setViewVisibility(R.id.widget_overage_row, View.GONE)
+            }
+
             val bgColor = when (content.color) {
                 WidgetColor.NORMAL -> R.color.widget_bg_normal
                 WidgetColor.WARNING -> R.color.widget_bg_warning
@@ -164,8 +210,9 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             } else {
                 context.getColor(R.color.widget_text_on_color)
             }
-            views.setTextColor(R.id.widget_line1, textColor)
-            views.setTextColor(R.id.widget_line2, textColor)
+            for (id in NORMAL_STATE_TEXT_VIEW_IDS) {
+                views.setTextColor(id, textColor)
+            }
             views.setOnClickPendingIntent(R.id.widget_root, manualRefreshPendingIntent(context))
             return views
         } finally {
@@ -175,11 +222,8 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
 
     private fun buildNoPermissionViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
-        views.setTextViewText(R.id.widget_line1, "タップして権限を許可")
-        views.setTextViewText(R.id.widget_line2, "")
+        applyStatusLayout(views, "タップして権限を許可", "", context.getColor(R.color.widget_text_normal))
         views.setInt(R.id.widget_root, "setBackgroundResource", R.color.widget_bg_normal)
-        views.setTextColor(R.id.widget_line1, context.getColor(R.color.widget_text_normal))
-        views.setTextColor(R.id.widget_line2, context.getColor(R.color.widget_text_normal))
 
         val intent = Intent(context, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pendingIntent = PendingIntent.getActivity(
@@ -192,23 +236,59 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
 
     private fun buildUpdatingViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
-        views.setTextViewText(R.id.widget_line1, "更新中…")
-        views.setTextViewText(R.id.widget_line2, "")
+        applyStatusLayout(views, "更新中…", "", context.getColor(R.color.widget_text_normal))
         views.setInt(R.id.widget_root, "setBackgroundResource", R.color.widget_bg_normal)
-        views.setTextColor(R.id.widget_line1, context.getColor(R.color.widget_text_normal))
-        views.setTextColor(R.id.widget_line2, context.getColor(R.color.widget_text_normal))
         return views
     }
 
     private fun buildErrorViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
-        views.setTextViewText(R.id.widget_line1, "更新失敗")
-        views.setTextViewText(R.id.widget_line2, "タップして再試行")
+        applyStatusLayout(views, "更新失敗", "タップして再試行", context.getColor(R.color.widget_text_on_color))
         views.setInt(R.id.widget_root, "setBackgroundResource", R.color.widget_bg_over)
-        views.setTextColor(R.id.widget_line1, context.getColor(R.color.widget_text_on_color))
-        views.setTextColor(R.id.widget_line2, context.getColor(R.color.widget_text_on_color))
         views.setOnClickPendingIntent(R.id.widget_root, manualRefreshPendingIntent(context))
         return views
+    }
+
+    /**
+     * applyStatusLayout() で GONE にしたラベル・金額行を通常表示に戻す。
+     * ウィジェットホストは同じレイアウトの RemoteViews を再適用する際に既存のビューを再利用し、
+     * 新しい RemoteViews に含まれるアクションだけを差分適用するため、
+     * 明示的に VISIBLE を指定しないと直前の「更新中」表示の GONE が残り続ける。
+     */
+    private fun restoreNormalLayout(views: RemoteViews) {
+        for (id in NORMAL_STATE_TEXT_VIEW_IDS) {
+            views.setViewVisibility(id, View.VISIBLE)
+        }
+        views.setViewVisibility(R.id.widget_amount_value, View.VISIBLE)
+        // widget_overage_row の VISIBLE/GONE は超過の有無に応じて呼び出し元で必ず明示する
+    }
+
+    /**
+     * 権限要求/更新中/エラーの各状態は「使用/件数/金額」のラベル付き3行構成ではなく、
+     * 簡潔な2行メッセージで表示する。ラベルと3行目を隠し、1・2行目の値欄をメッセージ表示に転用する。
+     */
+    private fun applyStatusLayout(views: RemoteViews, primary: String, secondary: String, textColor: Int) {
+        for (id in LABEL_VIEW_IDS) {
+            views.setViewVisibility(id, View.GONE)
+        }
+        views.setViewVisibility(R.id.widget_amount_value, View.GONE)
+        views.setViewVisibility(R.id.widget_overage_row, View.GONE)
+        views.setTextViewText(R.id.widget_time_value, primary)
+        views.setTextViewText(R.id.widget_count_value, secondary)
+        views.setTextColor(R.id.widget_time_value, textColor)
+        views.setTextColor(R.id.widget_count_value, textColor)
+    }
+
+    /**
+     * spec: docs/spec.md 5.5.1 line1（例: "42分 / 70分 (3件)" / "通話 128分 (4件)"）を
+     * 「使用」行の値（通話時間）と「件数」行の値に分解する。WidgetPresentation.presentWidget()
+     * 自体（line1/line2 の文字列）は変更しない。
+     */
+    private fun splitLine1(line1: String): Pair<String, String> {
+        val match = CALL_COUNT_SUFFIX_REGEX.find(line1) ?: return line1 to ""
+        val countText = "${match.groupValues[1]}件"
+        val timeText = line1.removeSuffix(match.value).trim().removePrefix("通話").trim()
+        return timeText to countText
     }
 
     private fun manualRefreshPendingIntent(context: Context): PendingIntent {

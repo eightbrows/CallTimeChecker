@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -154,6 +155,12 @@ private fun CallTimeCheckerApp(
 
     LaunchedEffect(hasPermission) {
         if (hasPermission) refresh()
+    }
+
+    // 設定画面はバックスタックを使わない自前の画面遷移のため、Backキー/ジェスチャーバックを
+    // ここで受け取って一覧画面へ戻す（有効なのは設定画面表示中のみ）
+    BackHandler(enabled = screen is Screen.Settings) {
+        screen = Screen.Main
     }
 
     when (screen) {

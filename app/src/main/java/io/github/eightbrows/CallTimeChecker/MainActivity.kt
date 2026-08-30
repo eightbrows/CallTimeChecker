@@ -1,8 +1,11 @@
 package io.github.eightbrows.CallTimeChecker
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -28,6 +31,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +44,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.eightbrows.CallTimeChecker.data.CallLogSync
 import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
@@ -50,6 +57,7 @@ import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
 import io.github.eightbrows.CallTimeChecker.logic.currentPeriod
+import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
 import io.github.eightbrows.CallTimeChecker.ui.SettingsScreen
 import io.github.eightbrows.CallTimeChecker.ui.theme.CallTimeCheckerTheme
@@ -134,6 +142,28 @@ private fun CallTimeCheckerApp(
         state = if (granted) UiState.Loading else UiState.NoPermission
     }
 
+    // OS のアプリ権限設定から戻ってきたときに許可状態を取り直す。
+    // 設定画面の「アプリの権限設定を開く」導線で許可された場合、これがないと未許可のままになる
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
+                PackageManager.PERMISSION_GRANTED
+            if (granted != hasPermission) hasPermission = granted
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun openAppSettings() {
+        val intent = Intent(
+            AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
     suspend fun refresh() {
         state = UiState.Loading
         try {
@@ -166,6 +196,9 @@ private fun CallTimeCheckerApp(
     when (screen) {
         is Screen.Settings -> SettingsScreen(
             current = appSettings,
+            hasPermission = hasPermission,
+            onRequestPermission = { permissionLauncher.launch(Manifest.permission.READ_CALL_LOG) },
+            onOpenAppSettings = { openAppSettings() },
             onSave = { updated ->
                 appSettings = updated
                 settingsRepository.save(updated)
@@ -186,6 +219,7 @@ private fun CallTimeCheckerApp(
                 is UiState.Error -> ErrorView(s.message) { scope.launch { refresh() } }
                 is UiState.Loaded -> LoadedContent(
                     state = s,
+                    planLabel = planTypeLabel(appSettings.planType),
                     zone = zone,
                     filter = breakdownFilter,
                     onFilterChange = { breakdownFilter = it },
@@ -227,6 +261,7 @@ private fun ErrorView(message: String, onRetry: () -> Unit) {
 @Composable
 private fun LoadedContent(
     state: UiState.Loaded,
+    planLabel: String,
     zone: ZoneId,
     filter: BreakdownFilter,
     onFilterChange: (BreakdownFilter) -> Unit,
@@ -234,7 +269,7 @@ private fun LoadedContent(
     onOpenSettings: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        SummarySection(state.period, state.result, state.settings, zone)
+        SummarySection(state.period, state.result, state.settings, planLabel, zone)
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRefresh) { Text("手動更新") }
@@ -242,6 +277,12 @@ private fun LoadedContent(
         }
         Spacer(Modifier.height(8.dp))
         HorizontalDivider()
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "通話履歴",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
         BreakdownFilterRow(filter, onFilterChange)
         val filteredDetails = when (filter) {
             BreakdownFilter.ALL -> state.details
@@ -281,31 +322,50 @@ private val DATETIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern(
 
 /** spec: docs/spec.md 5.6 サマリ（積算通話時間、定額枠、残り時間、概算料金、集計期間） */
 @Composable
-private fun SummarySection(period: Pair<Long, Long>, result: Result, settings: Settings, zone: ZoneId) {
+private fun SummarySection(
+    period: Pair<Long, Long>,
+    result: Result,
+    settings: Settings,
+    planLabel: String,
+    zone: ZoneId
+) {
     val startDate = Instant.ofEpochMilli(period.first).atZone(zone).toLocalDate()
     val endDate = Instant.ofEpochMilli(period.second - 1).atZone(zone).toLocalDate()
     val quotaSec = settings.monthlyFreeSec
     // ウィジェット（5.5.1）と数字が食い違わないよう、同じ基準で分子を選ぶ。
     // 月間定額型は切り上げ後の枠消費量、1通話定額型は枠が無いため実通話時間。
-    val usedSec = if (quotaSec > 0) result.quotaConsumedSec else result.countedSec
+    val hasQuota = quotaSec > 0
+    val usedSec = if (hasQuota) result.quotaConsumedSec else result.countedSec
     val remainingSec = (quotaSec - usedSec).coerceAtLeast(0)
+    val overSec = (usedSec - quotaSec).coerceAtLeast(0)
 
     Column {
         Text(
-            "${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}",
-            style = MaterialTheme.typography.bodyMedium
+            "通話プラン内容",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
         )
+        Spacer(Modifier.height(4.dp))
+        // プラン形式によって「使用」の分子の基準（枠消費量 / 実通話時間）と分母の有無が変わるため、
+        // どのプランでこの数字が出ているかを明示する
+        Text("期間: ${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}")
+        Text("プラン: $planLabel")
         Spacer(Modifier.height(8.dp))
+        // 項目名はウィジェット（5.5.1 の 使用 / 件数 / 金額 / 超過）と揃える
         Text(
-            "${usedSec / 60}分 / ${quotaSec / 60}分",
+            if (hasQuota) "使用: ${usedSec / 60}分 / ${quotaSec / 60}分" else "使用: ${usedSec / 60}分",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
-        Text("¥${result.amount}", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
-        Text("残り: ${remainingSec / 60}分")
+        Spacer(Modifier.height(4.dp))
+        Text("件数: ${result.callCount}件（課金対象 ${result.billedCallCount}件）")
+        Text("金額: ¥${result.amount}")
+        // 残り・超過は定額枠があるプランでのみ意味を持つ
+        if (hasQuota) {
+            val overText = if (overSec > 0) "${overSec / 60}分" else "なし"
+            Text("残り: ${remainingSec / 60}分 / 超過: $overText")
+        }
         Text("実通話時間: ${result.countedSec / 60}分${result.countedSec % 60}秒")
-        Text("通話件数: ${result.callCount}件（課金対象 ${result.billedCallCount}件）")
         Text("除外通話時間: ${result.excludedSec / 60}分${result.excludedSec % 60}秒")
     }
 }

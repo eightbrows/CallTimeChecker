@@ -360,4 +360,81 @@ class BillingTest {
         assertEquals(listOf(0, 30), details.map { it.billedSec })
         assertEquals(calculate(records, s).billedSec, details.sumOf { it.billedSec })
     }
+
+    // --- quotaConsumedSec: 実際の定額枠消費量（通話ごとに課金単位へ切り上げた値の合計、5.4.3） ---
+
+    @Test
+    fun `quotaConsumedSec rounds every call up to the billing unit, unlike countedSec`() {
+        // 2秒の通話 3件。実時間の合計は 6 秒だが、30 秒単位に切り上げると枠は 90 秒消費される
+        val records = listOf(record(1, 2), record(2, 2), record(3, 2))
+        val result = calculate(records, settings(monthlyFreeSec = 600, unitSec = 30))
+        assertEquals(6, result.countedSec)
+        assertEquals(90, result.quotaConsumedSec)
+    }
+
+    @Test
+    fun `quotaConsumedSec keeps accumulating after the monthly pool is exhausted`() {
+        // 枠 30 秒に対し 30 秒へ切り上がる通話 3 件。プールが尽きても消費量は切り上げ値の合計とする
+        val records = listOf(record(1, 10), record(2, 10), record(3, 10))
+        val result = calculate(records, settings(monthlyFreeSec = 30, unitSec = 30))
+        assertEquals(90, result.quotaConsumedSec)
+        assertEquals(60, result.billedSec)
+    }
+
+    @Test
+    fun `quotaConsumedSec excludes excluded numbers and unanswered calls`() {
+        val records = listOf(
+            record(1, 120, "0120190581"), // 除外
+            record(2, 0),                 // 未応答
+            record(3, 10)                 // 対象
+        )
+        val result = calculate(records, settings(monthlyFreeSec = 600, unitSec = 30))
+        assertEquals(30, result.quotaConsumedSec)
+        assertEquals(120, result.excludedSec)
+    }
+
+    @Test
+    fun `quotaConsumedSec counts only the part over perCallFreeSec`() {
+        // 例 A（5.4.5）: 超過分の切り上げ合計 = 0 + 0 + 30 + 180 = 210 秒
+        val records = listOf(record(1, 180), record(2, 300), record(3, 310), record(4, 460))
+        val result = calculate(records, settings(perCallFreeSec = 300, unitSec = 30, unitPrice = 22))
+        assertEquals(210, result.quotaConsumedSec)
+        assertEquals(1250, result.countedSec)
+    }
+
+    @Test
+    fun `quotaConsumedSec equals countedSec when every call is an exact multiple of unitSec`() {
+        val records = listOf(record(1, 30), record(2, 60))
+        val result = calculate(records, settings(monthlyFreeSec = 600, unitSec = 30))
+        assertEquals(90, result.countedSec)
+        assertEquals(90, result.quotaConsumedSec)
+    }
+
+    @Test
+    fun `quotaConsumedSec respects unitSec 60`() {
+        val records = listOf(record(1, 61), record(2, 1))
+        val result = calculate(records, settings(monthlyFreeSec = 600, unitSec = 60))
+        assertEquals(180, result.quotaConsumedSec)
+    }
+
+    @Test
+    fun `quotaConsumedSec of an empty period is zero`() {
+        assertEquals(0, calculate(emptyList(), settings(monthlyFreeSec = 600)).quotaConsumedSec)
+    }
+
+    @Test
+    fun `calculateDetails per-call quotaConsumedSec sums to calculate() quotaConsumedSec`() {
+        val records = listOf(record(1, 2), record(2, 45), record(3, 10))
+        val s = settings(monthlyFreeSec = 30, unitSec = 30)
+        val details = calculateDetails(records, s)
+        assertEquals(listOf(30, 60, 30), details.map { it.quotaConsumedSec })
+        assertEquals(calculate(records, s).quotaConsumedSec, details.sumOf { it.quotaConsumedSec })
+    }
+
+    @Test
+    fun `calculateDetails reports zero quotaConsumedSec for excluded and unanswered calls`() {
+        val records = listOf(record(1, 120, "0120190581"), record(2, 0), record(3, 10))
+        val details = calculateDetails(records, settings(monthlyFreeSec = 600, unitSec = 30))
+        assertEquals(listOf(0, 0, 30), details.map { it.quotaConsumedSec })
+    }
 }

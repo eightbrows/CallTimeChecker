@@ -215,17 +215,19 @@ data class Settings(
 )
 
 data class Result(
-    val countedSec: Int,     // 定額対象として計上した通話の実時間合計
-    val billedSec: Int,      // 課金対象秒数（単位切り上げ済み）
-    val amount: Int,         // 概算料金（円）
-    val excludedSec: Int,    // 除外番号への通話の実時間合計
-    val callCount: Int,      // 対象通話件数
-    val billedCallCount: Int // 課金が発生した通話件数
+    val countedSec: Int,       // 定額対象として計上した通話の実時間合計
+    val quotaConsumedSec: Int, // 実際の定額枠消費量（通話ごとに単位切り上げした値の合計）
+    val billedSec: Int,        // 課金対象秒数（単位切り上げ済み）
+    val amount: Int,           // 概算料金（円）
+    val excludedSec: Int,      // 除外番号への通話の実時間合計
+    val callCount: Int,        // 対象通話件数
+    val billedCallCount: Int   // 課金が発生した通話件数
 )
 
 fun calculate(records: List<CallRecord>, s: Settings): Result {
     var pool = s.monthlyFreeSec
     var countedSec = 0
+    var quotaConsumedSec = 0
     var billedSec = 0
     var excludedSec = 0
     var callCount = 0
@@ -246,6 +248,8 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
 
         // 通話ごとに課金単位へ切り上げる
         val units = ceilDiv(over, s.unitSec) * s.unitSec
+        // 枠が尽きた後も、消費量そのものは切り上げ値の合計として積み上げる
+        quotaConsumedSec += units
         val consumed = minOf(units, pool)
         pool -= consumed
         val billed = units - consumed
@@ -256,6 +260,7 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
     }
     return Result(
         countedSec = countedSec,
+        quotaConsumedSec = quotaConsumedSec,
         billedSec = billedSec,
         amount = billedSec / s.unitSec * s.unitPrice,
         excludedSec = excludedSec,
@@ -267,12 +272,22 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
 fun ceilDiv(a: Int, b: Int): Int = (a + b - 1) / b
 ```
 
+`countedSec` と `quotaConsumedSec` は用途が異なる。
+
+| フィールド | 意味 | 主な用途 |
+|---|---|---|
+| `countedSec` | 通話の実時間合計（切り上げなし） | 実際に何分話したかの参考表示 |
+| `quotaConsumedSec` | 通話ごとに課金単位へ切り上げた値の合計 | 定額枠の使用量表示・使用率による配色判定 |
+
+短い通話が多いほど両者は乖離する（例: 2 秒の通話 39 件は `countedSec = 78` 秒だが、30 秒単位では `quotaConsumedSec = 1170` 秒）。定額枠を実際に減らすのは後者のため、枠に対する使用量表示には `quotaConsumedSec` を使う。
+
 #### 5.4.4 計算上の決定事項
 
 | 論点 | 決定 | 理由 |
 |---|---|---|
 | 切り上げの単位 | 通話ごとに切り上げ | キャリアの課金方式に最も近い |
-| 定額枠の消費量 | 切り上げ**後**の秒数 | 同上 |
+| 定額枠の消費量 | 切り上げ**後**の秒数（`quotaConsumedSec`） | 同上 |
+| 枠が尽きた後の消費量 | 切り上げ値の合計を積み上げ続ける | 枠に対して何分超過したかを表示するため |
 | 通話の処理順 | 通話開始時刻の昇順 | 定額枠の消費順序を実際の時系列に一致させる |
 | 通話時間 0 秒 | 集計対象外 | 未応答・不通のため |
 | 除外番号への通話 | 定額枠を消費せず、料金も計上しない | 別建て課金のため本アプリでは追跡しない |
@@ -321,9 +336,11 @@ fun ceilDiv(a: Int, b: Int): Int = (a + b - 1) / b
 ¥352 (超過 8分)
 ```
 
+分子・超過量・配色判定はいずれも `Result.quotaConsumedSec`（切り上げ後の定額枠消費量、5.4.3）を用いる。実通話時間（`countedSec`）ではないため、短い通話が多い月は実際に話した時間より大きい値が表示される。これは定額枠が実際に減る量と一致させるための意図的な仕様。
+
 **1 通話定額型（`monthlyFreeSec = 0`）**
 
-分母となる枠が存在しないため、テンプレートを切り替える。
+分母となる枠が存在しないため、テンプレートを切り替える。消費すべき枠が無いので、こちらは実通話時間（`countedSec`）を表示する。
 
 ```
 通話 128分 (4件)
@@ -368,12 +385,16 @@ Doze 中は自動更新が遅延するが、用途上許容する。
 
 | 領域 | 内容 |
 |---|---|
-| サマリ | 積算通話時間、定額枠、残り時間、概算料金、集計期間（`2026/08/25 - 2026/09/24`） |
-| 内訳リスト | 期間内の通話一覧。日時、番号、通話時間、判定結果（定額内 / 課金 ¥XX / 除外）、課金対象秒数。「全件 / 課金対象のみ」の表示フィルタ切り替え可 |
+| サマリ | 枠消費量、定額枠、残り時間、実通話時間、概算料金、集計期間（`2026/08/25 - 2026/09/24`） |
+| 内訳リスト | 期間内の通話一覧。日時、番号、通話時間、判定結果（定額内 / 課金 ¥XX / 除外 / 未応答）、枠消費秒数。「全件 / 課金対象のみ」の表示フィルタ切り替え可 |
 | 権限 | 未許可時に要求ボタンを表示 |
 | 操作 | 手動更新、設定画面への遷移 |
 
+サマリの「枠消費量 / 定額枠」と「残り時間」は、ウィジェット（5.5.1）と数字が食い違わないよう同じ基準で算出する。すなわち月間定額型（`monthlyFreeSec > 0`）では `Result.quotaConsumedSec`、1 通話定額型では `Result.countedSec` を分子とする。実際に何分話したかは別途「実通話時間」として `countedSec` を併記する。
+
 内訳リストは、キャリアの請求明細と突き合わせて端数処理・除外ルールの妥当性を検証する唯一の手段であるため、初期リリースに含める。
+
+各行の判定結果は「実際に料金が発生したか」を表すため `CallDetail.billedSec` 基準のままとする。加えて、サマリの枠消費量と突き合わせられるよう、枠を消費した通話には `CallDetail.quotaConsumedSec`（切り上げ後の秒数）を `定額内・枠消費 30秒` の形式で併記する。
 
 「全件 / 課金対象のみ」フィルタは表示上の絞り込みのみで、集計ロジック（`calculate()`/`calculateDetails()`）には影響しない。「課金対象のみ」は各通話の課金対象秒数（`CallDetail.billedSec`）が 0 より大きいものを表示する。
 

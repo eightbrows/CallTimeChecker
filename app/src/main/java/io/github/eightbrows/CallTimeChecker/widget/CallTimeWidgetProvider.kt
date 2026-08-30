@@ -60,9 +60,9 @@ private val NORMAL_STATE_TEXT_VIEW_IDS = listOf(
     R.id.widget_overage_label, R.id.widget_overage_value
 )
 
-/** ラベル付き行レイアウトのうち、状態表示時に隠す必要があるビューID一覧 */
-private val LABEL_VIEW_IDS = listOf(
-    R.id.widget_time_label, R.id.widget_count_label, R.id.widget_amount_label
+/** 通常表示（使用/件数/金額）の行コンテナのビューID一覧。超過行は有無に応じて別途制御する */
+private val CONTENT_ROW_IDS = listOf(
+    R.id.widget_time_row, R.id.widget_count_row, R.id.widget_amount_row
 )
 
 /**
@@ -250,33 +250,41 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
     }
 
     /**
-     * applyStatusLayout() で GONE にしたラベル・金額行を通常表示に戻す。
+     * applyStatusLayout() で GONE にした通常表示の行を元に戻す。
      * ウィジェットホストは同じレイアウトの RemoteViews を再適用する際に既存のビューを再利用し、
      * 新しい RemoteViews に含まれるアクションだけを差分適用するため、
      * 明示的に VISIBLE を指定しないと直前の「更新中」表示の GONE が残り続ける。
      */
     private fun restoreNormalLayout(views: RemoteViews) {
+        for (id in CONTENT_ROW_IDS) {
+            views.setViewVisibility(id, View.VISIBLE)
+        }
+        // 旧バージョンではラベル・値を個別に GONE にしていたため、そのまま更新された
+        // 既存ウィジェットのために個別の VISIBLE 復帰も明示しておく
         for (id in NORMAL_STATE_TEXT_VIEW_IDS) {
             views.setViewVisibility(id, View.VISIBLE)
         }
-        views.setViewVisibility(R.id.widget_amount_value, View.VISIBLE)
+        views.setViewVisibility(R.id.widget_status, View.GONE)
         // widget_overage_row の VISIBLE/GONE は超過の有無に応じて呼び出し元で必ず明示する
     }
 
     /**
-     * 権限要求/更新中/エラーの各状態は「使用/件数/金額」のラベル付き3行構成ではなく、
-     * 簡潔な2行メッセージで表示する。ラベルと3行目を隠し、1・2行目の値欄をメッセージ表示に転用する。
+     * 権限要求/更新中/エラーの各状態は「使用/件数/金額」のラベル付き行構成ではなく、
+     * 中央寄せの専用ビュー（widget_status）にメッセージを出す。
+     * 値欄（gravity="end" かつラベル分の幅を差し引いた TextView）を流用すると右寄りに見えるため、
+     * 通常表示の行はすべて GONE にして専用ビューだけを表示する。
      */
     private fun applyStatusLayout(views: RemoteViews, primary: String, secondary: String, textColor: Int) {
-        for (id in LABEL_VIEW_IDS) {
+        for (id in CONTENT_ROW_IDS) {
             views.setViewVisibility(id, View.GONE)
         }
-        views.setViewVisibility(R.id.widget_amount_value, View.GONE)
         views.setViewVisibility(R.id.widget_overage_row, View.GONE)
-        views.setTextViewText(R.id.widget_time_value, primary)
-        views.setTextViewText(R.id.widget_count_value, secondary)
-        views.setTextColor(R.id.widget_time_value, textColor)
-        views.setTextColor(R.id.widget_count_value, textColor)
+        views.setViewVisibility(R.id.widget_status, View.VISIBLE)
+        views.setTextViewText(
+            R.id.widget_status,
+            if (secondary.isEmpty()) primary else "$primary\n$secondary"
+        )
+        views.setTextColor(R.id.widget_status, textColor)
     }
 
     /**

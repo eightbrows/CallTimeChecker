@@ -11,8 +11,22 @@ class WidgetPresentationTest {
     private fun settings(monthlyFreeSec: Int, perCallFreeSec: Int = 0) =
         Settings(monthlyFreeSec, perCallFreeSec, unitSec = 30, unitPrice = 22, excludePrefixes = DEFAULT_EXCLUDE_PREFIXES)
 
-    private fun result(countedSec: Int, amount: Int, callCount: Int = 1) =
-        Result(countedSec = countedSec, billedSec = 0, amount = amount, excludedSec = 0, callCount = callCount, billedCallCount = 0)
+    // 月間定額型の表示は quotaConsumedSec（切り上げ後の枠消費量）基準。
+    // 切り上げが発生しないケースでは countedSec と一致するため、既定値は countedSec とする。
+    private fun result(
+        countedSec: Int,
+        amount: Int,
+        callCount: Int = 1,
+        quotaConsumedSec: Int = countedSec
+    ) = Result(
+        countedSec = countedSec,
+        quotaConsumedSec = quotaConsumedSec,
+        billedSec = 0,
+        amount = amount,
+        excludedSec = 0,
+        callCount = callCount,
+        billedCallCount = 0
+    )
 
     // --- 月間定額型: テンプレート ---
 
@@ -86,5 +100,54 @@ class WidgetPresentationTest {
     fun `per-call plan with nonzero amount is WARNING, never OVER`() {
         val content = presentWidget(result(countedSec = 1000 * 60, amount = 99999), settings(monthlyFreeSec = 0, perCallFreeSec = 300))
         assertEquals(WidgetColor.WARNING, content.color)
+    }
+
+    // --- 月間定額型: quotaConsumedSec 基準であること（5.5.1） ---
+
+    @Test
+    fun `monthly plan shows quotaConsumedSec, not countedSec`() {
+        // 実時間 6 秒でも 30 秒単位の切り上げで枠を 20 分消費しているケース
+        val content = presentWidget(
+            result(countedSec = 6, amount = 0, callCount = 3, quotaConsumedSec = 20 * 60),
+            settings(monthlyFreeSec = 70 * 60)
+        )
+        assertEquals("20分 / 70分 (3件)", content.line1)
+    }
+
+    @Test
+    fun `monthly plan overage note is based on quotaConsumedSec`() {
+        val content = presentWidget(
+            result(countedSec = 10 * 60, amount = 352, callCount = 5, quotaConsumedSec = 78 * 60),
+            settings(monthlyFreeSec = 70 * 60)
+        )
+        assertEquals("78分 / 70分 (5件)", content.line1)
+        assertEquals("¥352 (超過 8分)", content.line2)
+    }
+
+    @Test
+    fun `monthly plan color is based on quotaConsumedSec`() {
+        val s = settings(monthlyFreeSec = 100)
+        // countedSec だけ見れば 10% だが、切り上げ後の枠消費は 100% に達している
+        val content = presentWidget(result(countedSec = 10, amount = 0, quotaConsumedSec = 100), s)
+        assertEquals(WidgetColor.OVER, content.color)
+    }
+
+    @Test
+    fun `monthly plan shows no overage note when quotaConsumedSec is within the quota`() {
+        val content = presentWidget(
+            result(countedSec = 78 * 60, amount = 0, callCount = 5, quotaConsumedSec = 60 * 60),
+            settings(monthlyFreeSec = 70 * 60)
+        )
+        assertEquals("60分 / 70分 (5件)", content.line1)
+        assertEquals("¥0", content.line2)
+    }
+
+    @Test
+    fun `per-call plan keeps using countedSec because there is no quota`() {
+        val content = presentWidget(
+            result(countedSec = 128 * 60, amount = 374, callCount = 4, quotaConsumedSec = 200 * 60),
+            settings(monthlyFreeSec = 0, perCallFreeSec = 300)
+        )
+        assertEquals("通話 128分 (4件)", content.line1)
     }
 }

@@ -19,6 +19,7 @@ data class Settings(
 /** spec: docs/spec.md 5.4.3 */
 data class Result(
     val countedSec: Int,
+    val quotaConsumedSec: Int,
     val billedSec: Int,
     val amount: Int,
     val excludedSec: Int,
@@ -44,6 +45,7 @@ fun ceilDiv(a: Int, b: Int): Int = (a + b - 1) / b
 fun calculate(records: List<CallRecord>, s: Settings): Result {
     var pool = s.monthlyFreeSec
     var countedSec = 0
+    var quotaConsumedSec = 0
     var billedSec = 0
     var excludedSec = 0
     var callCount = 0
@@ -64,6 +66,8 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
 
         // 通話ごとに課金単位へ切り上げる
         val units = ceilDiv(over, s.unitSec) * s.unitSec
+        // 定額枠の消費量は切り上げ後の秒数（5.4.4）。プールが尽きた後も消費量としては積み上げる
+        quotaConsumedSec += units
         val consumed = minOf(units, pool)
         pool -= consumed
         val billed = units - consumed
@@ -74,6 +78,7 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
     }
     return Result(
         countedSec = countedSec,
+        quotaConsumedSec = quotaConsumedSec,
         billedSec = billedSec,
         amount = billedSec / s.unitSec * s.unitPrice,
         excludedSec = excludedSec,
@@ -82,11 +87,16 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
     )
 }
 
-/** spec: docs/spec.md 5.6 内訳リストの1件分の判定結果（定額内 / 課金 / 除外 / 未応答） */
+/**
+ * spec: docs/spec.md 5.6 内訳リストの1件分の判定結果（定額内 / 課金 / 除外 / 未応答）。
+ * quotaConsumedSec は Result.quotaConsumedSec の1件分（切り上げ後の枠消費量）で、
+ * サマリの「使用」分数と内訳リストを突き合わせられるようにするためのもの。
+ */
 data class CallDetail(
     val record: CallRecord,
     val excluded: Boolean,
-    val billedSec: Int
+    val billedSec: Int,
+    val quotaConsumedSec: Int
 )
 
 /**
@@ -99,24 +109,24 @@ fun calculateDetails(records: List<CallRecord>, s: Settings): List<CallDetail> {
 
     for (r in records.sortedBy { it.dateMillis }) {
         if (isExcluded(r.number, s.excludePrefixes)) {
-            details += CallDetail(r, excluded = true, billedSec = 0)
+            details += CallDetail(r, excluded = true, billedSec = 0, quotaConsumedSec = 0)
             continue
         }
         if (r.durationSec == 0) {
-            details += CallDetail(r, excluded = false, billedSec = 0)
+            details += CallDetail(r, excluded = false, billedSec = 0, quotaConsumedSec = 0)
             continue
         }
 
         val over = maxOf(0, r.durationSec - s.perCallFreeSec)
         if (over == 0) {
-            details += CallDetail(r, excluded = false, billedSec = 0)
+            details += CallDetail(r, excluded = false, billedSec = 0, quotaConsumedSec = 0)
             continue
         }
 
         val units = ceilDiv(over, s.unitSec) * s.unitSec
         val consumed = minOf(units, pool)
         pool -= consumed
-        details += CallDetail(r, excluded = false, billedSec = units - consumed)
+        details += CallDetail(r, excluded = false, billedSec = units - consumed, quotaConsumedSec = units)
     }
     return details
 }

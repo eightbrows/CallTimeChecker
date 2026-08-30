@@ -16,6 +16,7 @@
 
     <!-- 1行目: 使用（通話時間 / 定額枠） -->
     <LinearLayout
+        android:id="@+id/widget_time_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
@@ -49,6 +50,7 @@
 
     <!-- 2行目: 件数（対象通話件数） -->
     <LinearLayout
+        android:id="@+id/widget_count_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
@@ -78,8 +80,9 @@
 
     </LinearLayout>
 
-    <!-- 3行目: 金額（概算料金。超過時は注記付きでそのまま右寄せ表示） -->
+    <!-- 3行目: 金額（概算料金。超過分は4行目に分離するためここは金額のみ） -->
     <LinearLayout
+        android:id="@+id/widget_amount_row"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
@@ -142,5 +145,21 @@
             android:textColor="@color/widget_text_normal" />
 
     </LinearLayout>
+
+    <!-- 状態表示（権限要求 / 更新中 / 更新失敗）。
+         上の4行はラベル(左寄せ)+値(右寄せ)構成のため、値欄を流用するとメッセージが右寄りになる。
+         そのため状態表示は専用の1ビューを用意し、他の行を全て GONE にして上下左右中央に出す。
+         2行メッセージは改行を含む1つの文字列として設定する。 -->
+    <TextView
+        android:id="@+id/widget_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:textSize="15sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:visibility="gone"
+        android:textColor="@color/widget_text_normal" />
 
 </LinearLayout>

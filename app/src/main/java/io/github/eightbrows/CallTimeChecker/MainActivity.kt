@@ -285,7 +285,10 @@ private fun SummarySection(period: Pair<Long, Long>, result: Result, settings: S
     val startDate = Instant.ofEpochMilli(period.first).atZone(zone).toLocalDate()
     val endDate = Instant.ofEpochMilli(period.second - 1).atZone(zone).toLocalDate()
     val quotaSec = settings.monthlyFreeSec
-    val remainingSec = (quotaSec - result.countedSec).coerceAtLeast(0)
+    // ウィジェット（5.5.1）と数字が食い違わないよう、同じ基準で分子を選ぶ。
+    // 月間定額型は切り上げ後の枠消費量、1通話定額型は枠が無いため実通話時間。
+    val usedSec = if (quotaSec > 0) result.quotaConsumedSec else result.countedSec
+    val remainingSec = (quotaSec - usedSec).coerceAtLeast(0)
 
     Column {
         Text(
@@ -294,13 +297,14 @@ private fun SummarySection(period: Pair<Long, Long>, result: Result, settings: S
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "${result.countedSec / 60}分 / ${quotaSec / 60}分",
+            "${usedSec / 60}分 / ${quotaSec / 60}分",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
         Text("¥${result.amount}", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
         Text("残り: ${remainingSec / 60}分")
+        Text("実通話時間: ${result.countedSec / 60}分${result.countedSec % 60}秒")
         Text("通話件数: ${result.callCount}件（課金対象 ${result.billedCallCount}件）")
         Text("除外通話時間: ${result.excludedSec / 60}分${result.excludedSec % 60}秒")
     }
@@ -330,11 +334,19 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
     val dateTime = remember(record.dateMillis) {
         Instant.ofEpochMilli(record.dateMillis).atZone(zone).toLocalDateTime()
     }
+    // 判定は「実際に料金が発生したか」なので billedSec 基準のまま。
+    // ただしサマリの「使用」分数は切り上げ後の枠消費量（quotaConsumedSec）基準になったため、
+    // 突き合わせられるよう各行に枠消費量も併記する（実時間と一致しない通話がある）
     val judgement = when {
         detail.excluded -> "除外"
         record.durationSec == 0 -> "未応答"
         detail.billedSec > 0 -> "課金 ¥${detail.billedSec / settings.unitSec * settings.unitPrice}"
         else -> "定額内"
+    }
+    val judgementText = if (detail.quotaConsumedSec > 0) {
+        "$judgement・枠消費 ${detail.quotaConsumedSec}秒"
+    } else {
+        judgement
     }
 
     Row(
@@ -347,7 +359,7 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Text("${record.durationSec}秒")
-            Text(judgement, style = MaterialTheme.typography.bodySmall)
+            Text(judgementText, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

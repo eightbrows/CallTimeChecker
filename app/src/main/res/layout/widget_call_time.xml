@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- spec: docs/spec.md 5.5.1 表示内容。1x2（横長・低い高さ）実機確認の結果、左右2分割より
-     ラベル付き3行縦並びのほうが低背サイズでも余白なく収まったため採用。
-     各行は「ラベル(左寄せ) + 値(右寄せ)」の横並び。値の文字列組み立ては Provider 側で行う。
-     文字サイズは実機(SH-51C)の 1x2 最小サイズで切れない上限が 17sp。
-     値側は桁数が増えた場合（例: "128分 / 70分"）に切れないよう autoSize で 12sp まで自動縮小する。 -->
+<!-- spec: docs/spec.md 5.5.1 表示内容。「ラベル(小) + 値(大)」のブロックを2つ縦に並べる。
+     アプリ本体の「現在の状況」(5.6.1)と同じ構成にして、両者で見え方を揃えている。
+     文字列の組み立ては WidgetPresentation.presentWidget() 側で行う。
+     文字サイズはラベル11sp / 値18sp。以前の4行構成では17spが1x2最小サイズの上限だったが、
+     ラベルが小さくなった分の余裕を値に回している。
+     値は桁数が増えた場合（例: "20.5 / 1419.5分"）に切れないよう autoSize で 12sp まで自動縮小する。
+     ラベルも「通話時間 / 無料枠残」が 11 文字と長いため 9sp まで縮小できるようにしている。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -14,141 +16,82 @@
     android:paddingHorizontal="8dp"
     android:paddingVertical="2dp">
 
-    <!-- 1行目: 使用（通話時間 / 定額枠） -->
+    <!-- ブロック1: 通話時間（月間定額型は「通話時間 / 無料枠残」） -->
     <LinearLayout
-        android:id="@+id/widget_time_row"
+        android:id="@+id/widget_time_block"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="vertical">
 
         <TextView
             android:id="@+id/widget_time_label"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="使用"
-            android:textSize="17sp"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="9sp"
+            android:autoSizeMaxTextSize="11sp"
+            android:autoSizeStepGranularity="1sp"
             android:textColor="@color/widget_text_normal" />
 
         <TextView
             android:id="@+id/widget_time_value"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:gravity="end"
-            android:textSize="17sp"
+            android:textSize="18sp"
             android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end"
             android:autoSizeTextType="uniform"
             android:autoSizeMinTextSize="12sp"
-            android:autoSizeMaxTextSize="17sp"
+            android:autoSizeMaxTextSize="18sp"
             android:autoSizeStepGranularity="1sp"
             android:textColor="@color/widget_text_normal" />
 
     </LinearLayout>
 
-    <!-- 2行目: 件数（対象通話件数） -->
+    <!-- ブロック2: 通話金額 -->
     <LinearLayout
-        android:id="@+id/widget_count_row"
+        android:id="@+id/widget_amount_block"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
-
-        <TextView
-            android:id="@+id/widget_count_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="件数"
-            android:textSize="17sp"
-            android:textColor="@color/widget_text_normal" />
-
-        <TextView
-            android:id="@+id/widget_count_value"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:gravity="end"
-            android:textSize="17sp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="12sp"
-            android:autoSizeMaxTextSize="17sp"
-            android:autoSizeStepGranularity="1sp"
-            android:textColor="@color/widget_text_normal" />
-
-    </LinearLayout>
-
-    <!-- 3行目: 金額（概算料金。超過分は4行目に分離するためここは金額のみ） -->
-    <LinearLayout
-        android:id="@+id/widget_amount_row"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginTop="4dp">
 
         <TextView
             android:id="@+id/widget_amount_label"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="金額"
-            android:textSize="17sp"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="9sp"
+            android:autoSizeMaxTextSize="11sp"
+            android:autoSizeStepGranularity="1sp"
             android:textColor="@color/widget_text_normal" />
 
         <TextView
             android:id="@+id/widget_amount_value"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:gravity="end"
-            android:textSize="17sp"
+            android:textSize="18sp"
             android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end"
             android:autoSizeTextType="uniform"
             android:autoSizeMinTextSize="12sp"
-            android:autoSizeMaxTextSize="17sp"
-            android:autoSizeStepGranularity="1sp"
-            android:textColor="@color/widget_text_normal" />
-
-    </LinearLayout>
-
-    <!-- 4行目: 超過（定額枠超過時のみ表示。超過がなければ行ごと GONE） -->
-    <LinearLayout
-        android:id="@+id/widget_overage_row"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/widget_overage_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="超過"
-            android:textSize="17sp"
-            android:textColor="@color/widget_text_normal" />
-
-        <TextView
-            android:id="@+id/widget_overage_value"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:gravity="end"
-            android:textSize="17sp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="12sp"
-            android:autoSizeMaxTextSize="17sp"
+            android:autoSizeMaxTextSize="18sp"
             android:autoSizeStepGranularity="1sp"
             android:textColor="@color/widget_text_normal" />
 
     </LinearLayout>
 
     <!-- 状態表示（権限要求 / 更新中 / 更新失敗）。
-         上の4行はラベル(左寄せ)+値(右寄せ)構成のため、値欄を流用するとメッセージが右寄りになる。
-         そのため状態表示は専用の1ビューを用意し、他の行を全て GONE にして上下左右中央に出す。
+         上の2ブロックはラベル+値の構成のため、値欄を流用するとメッセージの位置が揃わない。
+         そのため状態表示は専用の1ビューを用意し、他のブロックを全て GONE にして上下左右中央に出す。
          2行メッセージは改行を含む1つの文字列として設定する。 -->
     <TextView
         android:id="@+id/widget_status"

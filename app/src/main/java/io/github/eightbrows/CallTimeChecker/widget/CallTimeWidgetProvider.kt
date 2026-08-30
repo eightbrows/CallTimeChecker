@@ -39,31 +39,14 @@ const val ACTION_SETTINGS_CHANGED = "io.github.eightbrows.CallTimeChecker.widget
 private const val MIN_UPDATING_DISPLAY_MILLIS = 500L
 private val EXECUTOR = Executors.newSingleThreadExecutor()
 
-/**
- * spec: docs/spec.md 5.5.1 line1（例: "42分 / 70分 (3件)" / "通話 128分 (4件)"）末尾の
- * 件数表記を切り出すための正規表現。WidgetPresentation.presentWidget() 自体は変更せず、
- * 3行ラベル付きレイアウトへの割り当てはこの Provider 側でのみ行う。
- */
-private val CALL_COUNT_SUFFIX_REGEX = Regex("\\((\\d+)件\\)$")
-
-/**
- * spec: docs/spec.md 5.5.1 line2（超過時は "¥352 (超過 8分)"）から、金額部分と超過量を分離するための正規表現。
- * 金額行は "¥352" のみのシンプルな表示にし、超過量（"8分"）は「超過」ラベル付きの独立した4行目に出す。
- */
-private val OVERAGE_SUFFIX_REGEX = Regex("^(.+?)\\s*\\(超過 (.+?)\\)$")
-
-/** NORMAL状態で色を切り替える対象（4行×ラベル/値）のビューID一覧 */
+/** NORMAL状態で色を切り替える対象（2ブロック×ラベル/値）のビューID一覧 */
 private val NORMAL_STATE_TEXT_VIEW_IDS = listOf(
     R.id.widget_time_label, R.id.widget_time_value,
-    R.id.widget_count_label, R.id.widget_count_value,
-    R.id.widget_amount_label, R.id.widget_amount_value,
-    R.id.widget_overage_label, R.id.widget_overage_value
+    R.id.widget_amount_label, R.id.widget_amount_value
 )
 
-/** 通常表示（使用/件数/金額）の行コンテナのビューID一覧。超過行は有無に応じて別途制御する */
-private val CONTENT_ROW_IDS = listOf(
-    R.id.widget_time_row, R.id.widget_count_row, R.id.widget_amount_row
-)
+/** 通常表示（通話時間 / 通話金額）のブロックコンテナのビューID一覧 */
+private val CONTENT_ROW_IDS = listOf(R.id.widget_time_block, R.id.widget_amount_block)
 
 /**
  * spec: docs/spec.md 7.2 設定変更時のトリガー。SettingsRepository.save() 完了時に呼び出す想定。
@@ -175,29 +158,17 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
                 dbHelper.queryRange(period.first, period.second)
             }
             val result = calculate(records, settings)
-            val content = presentWidget(result, settings)
+            val content = presentWidget(result, settings, appSettings.planType)
 
             val views = RemoteViews(context.packageName, R.layout.widget_call_time)
             restoreNormalLayout(views)
 
-            // spec 5.5.1: WidgetPresentation.presentWidget() の line1/line2 自体は変更せず、
-            // 「使用/件数/金額/超過」の4行ラベル付きレイアウトへの割り当てだけをここで行う
-            val (timeText, countText) = splitLine1(content.line1)
-            views.setTextViewText(R.id.widget_time_value, timeText)
-            views.setTextViewText(R.id.widget_count_value, countText)
-
-            // 超過注記は金額行に混ぜず独立した4行目に出す。超過なしの場合は行ごと GONE。
-            // ホストはビューを再利用するため、VISIBLE/GONE は毎回必ず両方向を明示的に指定する。
-            val overageMatch = OVERAGE_SUFFIX_REGEX.find(content.line2)
-            if (overageMatch != null) {
-                views.setTextViewText(R.id.widget_amount_value, overageMatch.groupValues[1])
-                views.setTextViewText(R.id.widget_overage_value, overageMatch.groupValues[2])
-                views.setViewVisibility(R.id.widget_overage_row, View.VISIBLE)
-            } else {
-                views.setTextViewText(R.id.widget_amount_value, content.line2)
-                views.setTextViewText(R.id.widget_overage_value, "")
-                views.setViewVisibility(R.id.widget_overage_row, View.GONE)
-            }
+            // spec 5.5.1: ラベルも値もプラン形式で変わるため、文字列は presentWidget() が組み立てる。
+            // ここではビューへの割り当てだけを行う
+            views.setTextViewText(R.id.widget_time_label, content.timeLabel)
+            views.setTextViewText(R.id.widget_time_value, content.timeValue)
+            views.setTextViewText(R.id.widget_amount_label, content.amountLabel)
+            views.setTextViewText(R.id.widget_amount_value, content.amountValue)
 
             val bgColor = when (content.color) {
                 WidgetColor.NORMAL -> R.color.widget_bg_normal
@@ -265,38 +236,24 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(id, View.VISIBLE)
         }
         views.setViewVisibility(R.id.widget_status, View.GONE)
-        // widget_overage_row の VISIBLE/GONE は超過の有無に応じて呼び出し元で必ず明示する
     }
 
     /**
-     * 権限要求/更新中/エラーの各状態は「使用/件数/金額」のラベル付き行構成ではなく、
+     * 権限要求/更新中/エラーの各状態は「ラベル + 値」のブロック構成ではなく、
      * 中央寄せの専用ビュー（widget_status）にメッセージを出す。
-     * 値欄（gravity="end" かつラベル分の幅を差し引いた TextView）を流用すると右寄りに見えるため、
-     * 通常表示の行はすべて GONE にして専用ビューだけを表示する。
+     * 値欄（左寄せかつブロック内の1行）を流用するとメッセージが中央に来ないため、
+     * 通常表示のブロックはすべて GONE にして専用ビューだけを表示する。
      */
     private fun applyStatusLayout(views: RemoteViews, primary: String, secondary: String, textColor: Int) {
         for (id in CONTENT_ROW_IDS) {
             views.setViewVisibility(id, View.GONE)
         }
-        views.setViewVisibility(R.id.widget_overage_row, View.GONE)
         views.setViewVisibility(R.id.widget_status, View.VISIBLE)
         views.setTextViewText(
             R.id.widget_status,
             if (secondary.isEmpty()) primary else "$primary\n$secondary"
         )
         views.setTextColor(R.id.widget_status, textColor)
-    }
-
-    /**
-     * spec: docs/spec.md 5.5.1 line1（例: "42分 / 70分 (3件)" / "通話 128分 (4件)"）を
-     * 「使用」行の値（通話時間）と「件数」行の値に分解する。WidgetPresentation.presentWidget()
-     * 自体（line1/line2 の文字列）は変更しない。
-     */
-    private fun splitLine1(line1: String): Pair<String, String> {
-        val match = CALL_COUNT_SUFFIX_REGEX.find(line1) ?: return line1 to ""
-        val countText = "${match.groupValues[1]}件"
-        val timeText = line1.removeSuffix(match.value).trim().removePrefix("通話").trim()
-        return timeText to countText
     }
 
     private fun manualRefreshPendingIntent(context: Context): PendingIntent {

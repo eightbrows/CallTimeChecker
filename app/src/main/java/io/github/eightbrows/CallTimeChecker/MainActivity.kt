@@ -15,21 +15,28 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,11 +59,13 @@ import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
 import io.github.eightbrows.CallTimeChecker.logic.CallDetail
 import io.github.eightbrows.CallTimeChecker.logic.CallRecord
+import io.github.eightbrows.CallTimeChecker.logic.PlanType
 import io.github.eightbrows.CallTimeChecker.logic.Result
 import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
 import io.github.eightbrows.CallTimeChecker.logic.currentPeriod
+import io.github.eightbrows.CallTimeChecker.logic.formatMinutes
 import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
 import io.github.eightbrows.CallTimeChecker.ui.SettingsScreen
@@ -98,6 +107,12 @@ private sealed interface Screen {
 /** spec: docs/spec.md 12 未決事項「内訳リストに『課金対象のみ / 全件』フィルタ機能」。UI表示上の絞り込みのみで Billing.kt には影響しない */
 private enum class BreakdownFilter { ALL, BILLED_ONLY }
 
+/** spec: docs/spec.md 5.6 アプリ本体のタブ構成。宣言順が TabRow の並び順になる */
+private enum class MainTab(val label: String) {
+    SUMMARY("サマリ"),
+    HISTORY("通話履歴")
+}
+
 private sealed interface UiState {
     data object NoPermission : UiState
     data object Loading : UiState
@@ -124,6 +139,8 @@ private fun CallTimeCheckerApp(
     var screen by remember { mutableStateOf<Screen>(Screen.Main) }
     var appSettings by remember { mutableStateOf(settingsRepository.load()) }
     var breakdownFilter by remember { mutableStateOf(BreakdownFilter.ALL) }
+    // 更新のたびに UiState.Loading を挟むため、選択中のタブは LoadedContent の外で保持する
+    var mainTab by remember { mutableStateOf(MainTab.SUMMARY) }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -219,8 +236,10 @@ private fun CallTimeCheckerApp(
                 is UiState.Error -> ErrorView(s.message) { scope.launch { refresh() } }
                 is UiState.Loaded -> LoadedContent(
                     state = s,
-                    planLabel = planTypeLabel(appSettings.planType),
+                    planType = appSettings.planType,
                     zone = zone,
+                    tab = mainTab,
+                    onTabChange = { mainTab = it },
                     filter = breakdownFilter,
                     onFilterChange = { breakdownFilter = it },
                     onRefresh = { scope.launch { refresh() } },
@@ -258,38 +277,83 @@ private fun ErrorView(message: String, onRetry: () -> Unit) {
     }
 }
 
+/**
+ * spec: docs/spec.md 5.6 アプリ本体。
+ * 手動更新・設定はどちらのタブからも押せる必要があるため、タブの中身の外（ヘッダ行）に置く。
+ * タブの中に置くと履歴タブでリストと一緒にスクロールしてしまい、リストの縦幅も削ってしまう。
+ */
 @Composable
 private fun LoadedContent(
     state: UiState.Loaded,
-    planLabel: String,
+    planType: PlanType,
     zone: ZoneId,
+    tab: MainTab,
+    onTabChange: (MainTab) -> Unit,
     filter: BreakdownFilter,
     onFilterChange: (BreakdownFilter) -> Unit,
     onRefresh: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        SummarySection(state.period, state.result, state.settings, planLabel, zone)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "通話時間確認アプリ",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onRefresh) { Text("更新") }
+            TextButton(onClick = onOpenSettings) { Text("設定") }
+        }
+        TabRow(selectedTabIndex = tab.ordinal) {
+            for (entry in MainTab.entries) {
+                Tab(
+                    selected = tab == entry,
+                    onClick = { onTabChange(entry) },
+                    text = { Text(entry.label) }
+                )
+            }
+        }
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onRefresh) { Text("手動更新") }
-            Button(onClick = onOpenSettings) { Text("設定") }
+        when (tab) {
+            MainTab.SUMMARY -> SummarySection(state.period, state.result, state.settings, planType, zone)
+            MainTab.HISTORY -> HistoryTab(state, filter, onFilterChange)
         }
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider()
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "通話履歴",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        BreakdownFilterRow(filter, onFilterChange)
-        val filteredDetails = when (filter) {
-            BreakdownFilter.ALL -> state.details
-            BreakdownFilter.BILLED_ONLY -> state.details.filter { it.billedSec > 0 }
-        }
-        BreakdownList(filteredDetails, state.settings, modifier = Modifier.weight(1f))
     }
+}
+
+/**
+ * spec: docs/spec.md 5.6.1 / 5.6.2 履歴集計。
+ * 通話履歴を見に行かなくても件数と実時間が分かるよう、サマリタブと通話履歴タブの両方に出す。
+ */
+@Composable
+private fun HistorySummary(result: Result) {
+    Text("履歴集計", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(4.dp))
+    Text("通話件数: ${result.callCount}件（課金対象 ${result.billedCallCount}件）")
+    Text("通話時間（実時間）: ${result.countedSec / 60}分${result.countedSec % 60}秒")
+    Text("通話時間（除外）: ${result.excludedSec / 60}分${result.excludedSec % 60}秒")
+}
+
+/** spec: docs/spec.md 5.6.2 通話履歴タブ（履歴集計 + 通話履歴の内訳リスト） */
+@Composable
+private fun ColumnScope.HistoryTab(
+    state: UiState.Loaded,
+    filter: BreakdownFilter,
+    onFilterChange: (BreakdownFilter) -> Unit
+) {
+    HistorySummary(state.result)
+    Spacer(Modifier.height(8.dp))
+    HorizontalDivider()
+    Spacer(Modifier.height(8.dp))
+    Text("通話履歴", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    BreakdownFilterRow(filter, onFilterChange)
+    val filteredDetails = when (filter) {
+        BreakdownFilter.ALL -> state.details
+        BreakdownFilter.BILLED_ONLY -> state.details.filter { it.billedSec > 0 }
+    }
+    BreakdownList(filteredDetails, state.settings, modifier = Modifier.weight(1f))
 }
 
 /** spec: docs/spec.md 12 未決事項「内訳リストに『課金対象のみ / 全件』フィルタ機能」 */
@@ -320,54 +384,116 @@ private fun FilterOptionButton(label: String, selected: Boolean, onClick: () -> 
 private val PERIOD_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd")
 private val DATETIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
-/** spec: docs/spec.md 5.6 サマリ（積算通話時間、定額枠、残り時間、概算料金、集計期間） */
+/**
+ * spec: docs/spec.md 5.6 サマリ。
+ * サマリタブの中身。上段（プラン情報）+ 中段「現在の状況」（通話時間・通話金額）。
+ * アプリ名はタブの外のヘッダ行に、履歴集計は履歴タブに置く。
+ * 中段は「何を表す数字か」が一目で分かるよう、小さいラベル行と大きい値行のペアで並べる。
+ * 表示項目はプラン形式ごとに変わるため、`monthlyFreeSec > 0` のような値の判定ではなく
+ * PlanType で分岐する（5.4.2 のとおり両者は 1 対 1 に対応する）。
+ */
 @Composable
 private fun SummarySection(
     period: Pair<Long, Long>,
     result: Result,
     settings: Settings,
-    planLabel: String,
+    planType: PlanType,
     zone: ZoneId
 ) {
     val startDate = Instant.ofEpochMilli(period.first).atZone(zone).toLocalDate()
     val endDate = Instant.ofEpochMilli(period.second - 1).atZone(zone).toLocalDate()
-    val quotaSec = settings.monthlyFreeSec
-    // ウィジェット（5.5.1）と数字が食い違わないよう、同じ基準で分子を選ぶ。
-    // 月間定額型は切り上げ後の枠消費量、1通話定額型は枠が無いため実通話時間。
-    val hasQuota = quotaSec > 0
-    val usedSec = if (hasQuota) result.quotaConsumedSec else result.countedSec
-    val remainingSec = (quotaSec - usedSec).coerceAtLeast(0)
-    val overSec = (usedSec - quotaSec).coerceAtLeast(0)
 
     Column {
-        Text(
-            "通話プラン内容",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(4.dp))
-        // プラン形式によって「使用」の分子の基準（枠消費量 / 実通話時間）と分母の有無が変わるため、
-        // どのプランでこの数字が出ているかを明示する
+        Text("プラン: ${planTypeLabel(planType)}")
         Text("期間: ${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}")
-        Text("プラン: $planLabel")
-        Spacer(Modifier.height(8.dp))
-        // 項目名はウィジェット（5.5.1 の 使用 / 件数 / 金額 / 超過）と揃える
-        Text(
-            if (hasQuota) "使用: ${usedSec / 60}分 / ${quotaSec / 60}分" else "使用: ${usedSec / 60}分",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(4.dp))
-        Text("件数: ${result.callCount}件（課金対象 ${result.billedCallCount}件）")
-        Text("金額: ¥${result.amount}")
-        // 残り・超過は定額枠があるプランでのみ意味を持つ
-        if (hasQuota) {
-            val overText = if (overSec > 0) "${overSec / 60}分" else "なし"
-            Text("残り: ${remainingSec / 60}分 / 超過: $overText")
+        // 無料枠はプラン形式ごとに意味が違うため、そのプランで有効な方だけを出す
+        when (planType) {
+            PlanType.MONTHLY -> Text("無料枠: ${settings.monthlyFreeSec / 60}分")
+            PlanType.PER_CALL -> Text("1通話無料枠: ${settings.perCallFreeSec / 60}分")
+            PlanType.PAY_AS_YOU_GO -> Unit
         }
-        Text("実通話時間: ${result.countedSec / 60}分${result.countedSec % 60}秒")
-        Text("除外通話時間: ${result.excludedSec / 60}分${result.excludedSec % 60}秒")
+        Text("単価: ${settings.unitSec}秒 / ${settings.unitPrice}円")
+
+        SectionDivider()
+        Text("現在の状況", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        // 通話時間の基準はウィジェット（5.5.1）と揃える。
+        // 月間定額型は切り上げ後の課金枠の消費量、それ以外は枠が無いため実通話時間。
+        when (planType) {
+            PlanType.MONTHLY -> {
+                val remainingSec = (settings.monthlyFreeSec - result.quotaConsumedSec).coerceAtLeast(0)
+                StatusItem(
+                    label = "通話時間 / 無料枠残",
+                    value = "${formatMinutes(result.quotaConsumedSec)} / ${formatMinutes(remainingSec)}分",
+                    over = result.quotaConsumedSec > settings.monthlyFreeSec
+                )
+            }
+            PlanType.PER_CALL -> StatusItem(
+                label = "通話時間",
+                value = "${formatMinutes(result.countedSec)}分",
+                // 1 通話ごとの無料時間を超えた通話があれば超過。枠残という概念は無い
+                over = result.billedCallCount > 0
+            )
+            // 従量課金は無料枠が無く「超過」が定義できないため、バッジ自体を出さない
+            PlanType.PAY_AS_YOU_GO -> StatusItem(
+                label = "通話時間",
+                value = "${formatMinutes(result.countedSec)}分",
+                over = null
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        StatusItem(label = "通話金額", value = "${result.amount}円", over = null)
+
+        SectionDivider()
+        HistorySummary(result)
     }
+}
+
+/** 「現在の状況」の 1 項目。小さいラベル行 + 大きい値行のペア。over が null ならバッジを出さない */
+@Composable
+private fun StatusItem(label: String, value: String, over: Boolean?) {
+    Text(
+        label,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (over != null) {
+            Spacer(Modifier.width(8.dp))
+            OverBadge(over)
+        }
+    }
+}
+
+@Composable
+private fun OverBadge(over: Boolean) {
+    Surface(
+        color = if (over) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        contentColor = if (over) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        shape = RoundedCornerShape(50)
+    ) {
+        Text(
+            if (over) "超過あり" else "超過なし",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun SectionDivider() {
+    Spacer(Modifier.height(12.dp))
+    HorizontalDivider()
+    Spacer(Modifier.height(12.dp))
 }
 
 /** spec: docs/spec.md 5.6 内訳リスト（日時、番号、通話時間、判定結果、課金対象秒数） */
@@ -395,8 +521,8 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
         Instant.ofEpochMilli(record.dateMillis).atZone(zone).toLocalDateTime()
     }
     // 判定は「実際に料金が発生したか」なので billedSec 基準のまま。
-    // ただしサマリの「使用」分数は切り上げ後の枠消費量（quotaConsumedSec）基準になったため、
-    // 突き合わせられるよう各行に枠消費量も併記する（実時間と一致しない通話がある）
+    // ただしサマリの通話時間は切り上げ後の課金枠の消費量（quotaConsumedSec）基準のため、
+    // 突き合わせられるよう各行に課金枠の秒数も併記する（実時間と一致しない通話がある）
     val judgement = when {
         detail.excluded -> "除外"
         record.durationSec == 0 -> "未応答"
@@ -404,7 +530,7 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
         else -> "定額内"
     }
     val judgementText = if (detail.quotaConsumedSec > 0) {
-        "$judgement・枠消費 ${detail.quotaConsumedSec}秒"
+        "$judgement・課金枠 ${detail.quotaConsumedSec}秒"
     } else {
         judgement
     }

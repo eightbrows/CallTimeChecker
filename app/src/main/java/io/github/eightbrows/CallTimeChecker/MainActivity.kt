@@ -418,7 +418,8 @@ private fun SummarySection(
         Text("現在の状況", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         // 通話時間の基準はウィジェット（5.5.1）と揃える。
-        // 月間定額型は切り上げ後の課金枠の消費量、それ以外は枠が無いため実通話時間。
+        // 全プランとも、通話金額の計算根拠と一致させるため切り上げ後の課金枠の消費量
+        // （quotaConsumedSec、5.4.4）を使う。実通話時間は「履歴集計」側に併記する。
         when (planType) {
             PlanType.MONTHLY -> {
                 val remainingSec = (settings.monthlyFreeSec - result.quotaConsumedSec).coerceAtLeast(0)
@@ -430,14 +431,14 @@ private fun SummarySection(
             }
             PlanType.PER_CALL -> StatusItem(
                 label = "通話時間",
-                value = "${formatMinutes(result.countedSec)}分",
+                value = "${formatMinutes(result.quotaConsumedSec)}分",
                 // 1 通話ごとの無料時間を超えた通話があれば超過。枠残という概念は無い
                 over = result.billedCallCount > 0
             )
             // 従量課金は無料枠が無く「超過」が定義できないため、バッジ自体を出さない
             PlanType.PAY_AS_YOU_GO -> StatusItem(
                 label = "通話時間",
-                value = "${formatMinutes(result.countedSec)}分",
+                value = "${formatMinutes(result.quotaConsumedSec)}分",
                 over = null
             )
         }

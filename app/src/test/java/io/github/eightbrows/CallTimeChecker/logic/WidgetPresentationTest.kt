@@ -11,7 +11,7 @@ class WidgetPresentationTest {
     private fun settings(monthlyFreeSec: Int, perCallFreeSec: Int = 0) =
         Settings(monthlyFreeSec, perCallFreeSec, unitSec = 30, unitPrice = 22, excludePrefixes = DEFAULT_EXCLUDE_PREFIXES)
 
-    // 月間定額型の表示は quotaConsumedSec（切り上げ後の枠消費量）基準。
+    // 「通話時間」の表示は全プランとも quotaConsumedSec（切り上げ後の課金枠の消費量）基準。
     // 切り上げが発生しないケースでは countedSec と一致するため、既定値は countedSec とする。
     private fun result(
         countedSec: Int,
@@ -176,7 +176,7 @@ class WidgetPresentationTest {
         assertEquals(WidgetColor.NORMAL, large.color)
     }
 
-    // --- 月間定額型: quotaConsumedSec 基準であること（5.5.1） ---
+    // --- 全プラン共通: 通話時間は quotaConsumedSec 基準であること（5.5.1） ---
 
     @Test
     fun `monthly plan shows quotaConsumedSec, not countedSec`() {
@@ -201,12 +201,63 @@ class WidgetPresentationTest {
     }
 
     @Test
-    fun `per-call plan keeps using countedSec because there is no quota`() {
+    fun `per-call plan shows quotaConsumedSec, not countedSec`() {
         val content = presentWidget(
             result(countedSec = 128 * 60, amount = 374, callCount = 4, quotaConsumedSec = 200 * 60),
             settings(monthlyFreeSec = 0, perCallFreeSec = 300),
             PlanType.PER_CALL
         )
-        assertEquals("128.0分", content.timeValue)
+        assertEquals("200.0分", content.timeValue)
+    }
+
+    @Test
+    fun `pay-as-you-go plan shows quotaConsumedSec, not countedSec`() {
+        val content = presentWidget(
+            result(countedSec = 30, amount = 66, callCount = 3, quotaConsumedSec = 90),
+            settings(monthlyFreeSec = 0, perCallFreeSec = 0),
+            PlanType.PAY_AS_YOU_GO
+        )
+        assertEquals("1.5分", content.timeValue)
+    }
+
+    // --- 表示している通話時間が、通話金額の計算根拠と一致すること（5.6.1） ---
+
+    @Test
+    fun `pay-as-you-go display minutes are the exact basis of the amount`() {
+        // 10 秒の通話 3 件。実時間は 30 秒だが、30 秒単位の切り上げで課金対象は 90 秒
+        val s = settings(monthlyFreeSec = 0, perCallFreeSec = 0)
+        val calculated = calculate(
+            List(3) { CallRecord(dateMillis = 1000L * it, durationSec = 10, number = "09000000000") },
+            s
+        )
+
+        assertEquals(30, calculated.countedSec)
+        assertEquals(90, calculated.quotaConsumedSec)
+        // monthlyFreeSec = 0 なのでプールが無く、枠消費量と課金対象秒数は常に一致する
+        assertEquals(calculated.quotaConsumedSec, calculated.billedSec)
+        assertEquals(calculated.quotaConsumedSec / s.unitSec * s.unitPrice, calculated.amount)
+
+        val content = presentWidget(calculated, s, PlanType.PAY_AS_YOU_GO)
+        assertEquals("1.5分", content.timeValue)
+        assertEquals("66円", content.amountValue)
+    }
+
+    @Test
+    fun `per-call display minutes are the exact basis of the amount`() {
+        // 1 通話無料 5 分に対し 400 秒の通話 2 件。超過 100 秒 -> 30 秒単位で 120 秒ずつ
+        val s = settings(monthlyFreeSec = 0, perCallFreeSec = 300)
+        val calculated = calculate(
+            List(2) { CallRecord(dateMillis = 1000L * it, durationSec = 400, number = "09000000000") },
+            s
+        )
+
+        assertEquals(800, calculated.countedSec)
+        assertEquals(240, calculated.quotaConsumedSec)
+        assertEquals(calculated.quotaConsumedSec, calculated.billedSec)
+        assertEquals(calculated.quotaConsumedSec / s.unitSec * s.unitPrice, calculated.amount)
+
+        val content = presentWidget(calculated, s, PlanType.PER_CALL)
+        assertEquals("4.0分", content.timeValue)
+        assertEquals("176円", content.amountValue)
     }
 }

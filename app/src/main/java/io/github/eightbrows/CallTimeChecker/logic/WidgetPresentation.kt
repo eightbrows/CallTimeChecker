@@ -25,6 +25,8 @@ fun formatMinutes(sec: Int): String = String.format(Locale.JAPAN, "%.1f", sec / 
 
 /**
  * spec: docs/spec.md 5.5.1 / 5.5.3 の表示テンプレート・配色判定。
+ * 通話時間は全プランとも、通話金額の計算根拠と一致させるため切り上げ後の課金枠の
+ * 消費量（quotaConsumedSec、5.4.4）を使う。実通話時間はアプリ本体の「履歴集計」で確認する。
  * calculate() の結果 (Result) と Settings / PlanType のみから決まる純粋関数。
  * 表示項目はアプリ本体の「現在の状況」（5.6.1）と揃える。
  */
@@ -56,11 +58,11 @@ fun presentWidget(result: Result, settings: Settings, planType: PlanType): Widge
                 color = color
             )
         }
-        // 1 通話定額型: 消費すべき定額枠が無いため、表示は実通話時間のまま。
-        // 使用率が定義できないので課金額 0 円かどうかで色を切り替える（超過色は使わない）
+        // 1 通話定額型: 月間の定額枠が無いため使用率が定義できない。
+        // 課金額 0 円かどうかで色を切り替える（超過色は使わない）
         PlanType.PER_CALL -> WidgetContent(
             timeLabel = "通話時間",
-            timeValue = "${formatMinutes(result.countedSec)}分",
+            timeValue = "${formatMinutes(result.quotaConsumedSec)}分",
             amountLabel = "通話金額",
             amountValue = amountValue,
             color = if (result.amount == 0) WidgetColor.NORMAL else WidgetColor.WARNING
@@ -68,7 +70,7 @@ fun presentWidget(result: Result, settings: Settings, planType: PlanType): Widge
         // 従量課金: 無料枠が無く「超過」という概念自体が無いため、金額が出ていても常に通常色
         PlanType.PAY_AS_YOU_GO -> WidgetContent(
             timeLabel = "通話時間",
-            timeValue = "${formatMinutes(result.countedSec)}分",
+            timeValue = "${formatMinutes(result.quotaConsumedSec)}分",
             amountLabel = "通話金額",
             amountValue = amountValue,
             color = WidgetColor.NORMAL

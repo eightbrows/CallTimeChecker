@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,7 +39,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -295,16 +298,21 @@ private fun LoadedContent(
     onOpenSettings: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Text(
                 "通話時間確認アプリ",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
+                // ボタン 2 つで幅を使うため、狭い端末ではタイトル側を省略して折り返さないようにする
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            TextButton(onClick = onRefresh) { Text("更新") }
-            TextButton(onClick = onOpenSettings) { Text("設定") }
+            HeaderButton("更新", onRefresh)
+            HeaderButton("設定", onOpenSettings)
         }
         TabRow(selectedTabIndex = tab.ordinal) {
             for (entry in MainTab.entries) {
@@ -320,6 +328,22 @@ private fun LoadedContent(
             MainTab.SUMMARY -> SummarySection(state.period, state.result, state.settings, planType, zone)
             MainTab.HISTORY -> HistoryTab(state, filter, onFilterChange)
         }
+    }
+}
+
+/**
+ * spec: docs/spec.md 5.6 ヘッダの操作ボタン。
+ * TextButton の既定サイズ（58x40dp）はタップしづらいため、Material のタップターゲット
+ * 推奨最小である 48dp の高さを確保し、背景色付き（FilledTonalButton）で押せることを明示する。
+ */
+@Composable
+private fun HeaderButton(label: String, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium)
     }
 }
 

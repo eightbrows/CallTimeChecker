@@ -23,8 +23,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,7 +42,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabPosition
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -143,7 +151,7 @@ private fun CallTimeCheckerApp(
     var appSettings by remember { mutableStateOf(settingsRepository.load()) }
     var breakdownFilter by remember { mutableStateOf(BreakdownFilter.ALL) }
     // 更新のたびに UiState.Loading を挟むため、選択中のタブは LoadedContent の外で保持する
-    var mainTab by remember { mutableStateOf(MainTab.SUMMARY) }
+    val pagerState = rememberPagerState(pageCount = { MainTab.entries.size })
 
     var hasPermission by remember {
         mutableStateOf(
@@ -241,8 +249,7 @@ private fun CallTimeCheckerApp(
                     state = s,
                     planType = appSettings.planType,
                     zone = zone,
-                    tab = mainTab,
-                    onTabChange = { mainTab = it },
+                    pagerState = pagerState,
                     filter = breakdownFilter,
                     onFilterChange = { breakdownFilter = it },
                     onRefresh = { scope.launch { refresh() } },
@@ -290,8 +297,7 @@ private fun LoadedContent(
     state: UiState.Loaded,
     planType: PlanType,
     zone: ZoneId,
-    tab: MainTab,
-    onTabChange: (MainTab) -> Unit,
+    pagerState: PagerState,
     filter: BreakdownFilter,
     onFilterChange: (BreakdownFilter) -> Unit,
     onRefresh: () -> Unit,
@@ -314,21 +320,56 @@ private fun LoadedContent(
             HeaderButton("更新", onRefresh)
             HeaderButton("設定", onOpenSettings)
         }
-        TabRow(selectedTabIndex = tab.ordinal) {
-            for (entry in MainTab.entries) {
+        val scope = rememberCoroutineScope()
+        TabRow(
+            selectedTabIndex = pagerState.currentPage,
+            indicator = { tabPositions -> PagerTabIndicator(tabPositions, pagerState) }
+        ) {
+            MainTab.entries.forEachIndexed { index, entry ->
                 Tab(
-                    selected = tab == entry,
-                    onClick = { onTabChange(entry) },
+                    selected = pagerState.currentPage == index,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                     text = { Text(entry.label) }
                 )
             }
         }
         Spacer(Modifier.height(12.dp))
-        when (tab) {
-            MainTab.SUMMARY -> SummarySection(state.period, state.result, state.settings, planType, zone)
-            MainTab.HISTORY -> HistoryTab(state, filter, onFilterChange)
+        // 縦スクロールする内訳リストと横スワイプが競合しないよう、方向の切り分けは
+        // HorizontalPager（と LazyColumn）の入れ子スクロールに任せる
+        // 縦スクロールと横スワイプの振り分けは Compose の入れ子スクロールに任せる。
+        // 内訳リストがスクロールできる限り縦ドラッグはリスト側が消費するため、
+        // 多少斜めに振れてもページ送りは始まらない（リストの端まで来ると親のページ送りに渡る）
+        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+            Column(Modifier.fillMaxSize()) {
+                when (MainTab.entries[page]) {
+                    MainTab.SUMMARY -> SummarySection(state.period, state.result, state.settings, planType, zone)
+                    MainTab.HISTORY -> HistoryTab(state, filter, onFilterChange)
+                }
+            }
         }
     }
+}
+
+/**
+ * spec: docs/spec.md 5.6 タブのインジケーター。
+ * TabRow の既定インジケーターは選択が確定したときにアニメーションするだけで、
+ * スワイプ途中の指の位置には追従しない。ページ位置（currentPage + currentPageOffsetFraction）で
+ * 隣のタブとの間を補間し、スワイプ量に比例して動くようにする。
+ */
+@Composable
+private fun PagerTabIndicator(tabPositions: List<TabPosition>, pagerState: PagerState) {
+    if (tabPositions.isEmpty()) return
+    val position = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+        .coerceIn(0f, tabPositions.lastIndex.toFloat())
+    val index = position.toInt().coerceIn(0, maxOf(0, tabPositions.lastIndex - 1))
+    val next = (index + 1).coerceAtMost(tabPositions.lastIndex)
+    val fraction = position - index
+    TabRowDefaults.SecondaryIndicator(
+        Modifier
+            .wrapContentSize(Alignment.BottomStart)
+            .offset(x = lerp(tabPositions[index].left, tabPositions[next].left, fraction))
+            .width(lerp(tabPositions[index].width, tabPositions[next].width, fraction))
+    )
 }
 
 /**

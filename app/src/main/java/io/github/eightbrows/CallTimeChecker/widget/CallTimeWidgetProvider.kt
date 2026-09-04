@@ -23,6 +23,8 @@ import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.currentPeriod
 import io.github.eightbrows.CallTimeChecker.logic.presentWidget
 import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
+import io.github.eightbrows.CallTimeChecker.logic.widgetBgAlpha
+import io.github.eightbrows.CallTimeChecker.logic.withAlpha
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -170,12 +172,12 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_amount_label, content.amountLabel)
             views.setTextViewText(R.id.widget_amount_value, content.amountValue)
 
-            val bgColor = when (content.color) {
+            val bgColorRes = when (content.color) {
                 WidgetColor.NORMAL -> R.color.widget_bg_normal
                 WidgetColor.WARNING -> R.color.widget_bg_warning
                 WidgetColor.OVER -> R.color.widget_bg_over
             }
-            views.setInt(R.id.widget_root, "setBackgroundResource", bgColor)
+            applyBackground(context, views, bgColorRes, appSettings.widgetBgTransparencyStep)
             val textColor = if (content.color == WidgetColor.NORMAL) {
                 context.getColor(R.color.widget_text_normal)
             } else {
@@ -194,7 +196,7 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
     private fun buildNoPermissionViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
         applyStatusLayout(views, "タップして権限を許可", "", context.getColor(R.color.widget_text_normal))
-        views.setInt(R.id.widget_root, "setBackgroundResource", R.color.widget_bg_normal)
+        applyBackground(context, views, R.color.widget_bg_normal, transparencyStep(context))
 
         val intent = Intent(context, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pendingIntent = PendingIntent.getActivity(
@@ -208,14 +210,14 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
     private fun buildUpdatingViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
         applyStatusLayout(views, "更新中…", "", context.getColor(R.color.widget_text_normal))
-        views.setInt(R.id.widget_root, "setBackgroundResource", R.color.widget_bg_normal)
+        applyBackground(context, views, R.color.widget_bg_normal, transparencyStep(context))
         return views
     }
 
     private fun buildErrorViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
         applyStatusLayout(views, "更新失敗", "タップして再試行", context.getColor(R.color.widget_text_on_color))
-        views.setInt(R.id.widget_root, "setBackgroundResource", R.color.widget_bg_over)
+        applyBackground(context, views, R.color.widget_bg_over, transparencyStep(context))
         views.setOnClickPendingIntent(R.id.widget_root, manualRefreshPendingIntent(context))
         return views
     }
@@ -255,6 +257,22 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         )
         views.setTextColor(R.id.widget_status, textColor)
     }
+
+    /**
+     * spec: docs/spec.md 5.5.3 背景は固定の色リソースではなく、透過率を反映した ARGB を
+     * setBackgroundColor で設定する。色リソース自体は不透明のまま、alpha だけを差し替える。
+     */
+    private fun applyBackground(context: Context, views: RemoteViews, colorRes: Int, step: Int) {
+        val argb = withAlpha(context.getColor(colorRes), widgetBgAlpha(step))
+        views.setInt(R.id.widget_root, "setBackgroundColor", argb)
+    }
+
+    /**
+     * 権限要求 / 更新中 / 更新失敗の各状態でも同じ透過率を使う。
+     * これらは集計前・集計失敗時に呼ばれ AppSettings を読めていないため、ここで読み直す。
+     */
+    private fun transparencyStep(context: Context): Int =
+        SettingsRepository(context).load().widgetBgTransparencyStep
 
     private fun manualRefreshPendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, CallTimeWidgetProvider::class.java).setAction(ACTION_MANUAL_REFRESH)

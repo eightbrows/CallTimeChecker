@@ -19,15 +19,23 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,7 +48,9 @@ import io.github.eightbrows.CallTimeChecker.logic.PlanType
 import io.github.eightbrows.CallTimeChecker.logic.clampMonthlyFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
+import io.github.eightbrows.CallTimeChecker.logic.WIDGET_BG_TRANSPARENCY_STEP_COUNT
 import io.github.eightbrows.CallTimeChecker.logic.clampUnitPrice
+import io.github.eightbrows.CallTimeChecker.logic.clampWidgetBgTransparencyStep
 import io.github.eightbrows.CallTimeChecker.logic.effectiveAppSettings
 import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesPreview
 import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesToText
@@ -50,6 +60,9 @@ import io.github.eightbrows.CallTimeChecker.logic.parseExcludePrefixes
 import io.github.eightbrows.CallTimeChecker.logic.perCallFreeMinRange
 import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.validateRange
+import io.github.eightbrows.CallTimeChecker.logic.widgetBgTransparencyLabel
+import kotlinx.coroutines.flow.first
+import kotlin.math.roundToInt
 
 /**
  * spec: docs/spec.md 5.7 設定項目（プラン形式・起算日・定額枠・通話別無料時間・課金単位・単位金額・除外番号リスト）。
@@ -79,6 +92,7 @@ fun SettingsScreen(
     var perCallFreeMinText by remember { mutableStateOf(current.perCallFreeMin.toString()) }
     var unitSec by remember { mutableStateOf(current.unitSec) }
     var unitPriceText by remember { mutableStateOf(current.unitPrice.toString()) }
+    var widgetBgTransparencyStep by remember { mutableStateOf(current.widgetBgTransparencyStep) }
     var excludeText by remember { mutableStateOf(excludePrefixesToText(current.excludePrefixes)) }
     var excludeExpanded by remember { mutableStateOf(false) }
 
@@ -181,6 +195,9 @@ fun SettingsScreen(
             onTextChange = { excludeText = it },
             onReset = { excludeText = excludePrefixesToText(DEFAULT_EXCLUDE_PREFIXES) }
         )
+        Spacer(Modifier.height(8.dp))
+
+        WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
         Spacer(Modifier.height(16.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -200,7 +217,8 @@ fun SettingsScreen(
                         ),
                         unitSec = normalizeUnitSec(unitSec),
                         unitPrice = clampUnitPrice(unitPriceText.trim().toIntOrNull() ?: current.unitPrice),
-                        excludePrefixes = parseExcludePrefixes(excludeText)
+                        excludePrefixes = parseExcludePrefixes(excludeText),
+                        widgetBgTransparencyStep = clampWidgetBgTransparencyStep(widgetBgTransparencyStep)
                     )
                     onSave(effectiveAppSettings(raw))
                 }
@@ -218,6 +236,84 @@ fun SettingsScreen(
             style = MaterialTheme.typography.bodySmall
         )
     }
+}
+
+/** DropdownMenuItem の最小高。メニュー内のスクロール位置の計算に使う */
+private val MENU_ITEM_HEIGHT = 48.dp
+
+/**
+ * spec: docs/spec.md 5.7 ウィジェット背景の透過率。
+ * 0%〜100% の 12.5% 刻み 9 段階をプルダウン（ExposedDropdownMenuBox）で選ぶ。
+ * ラジオ 9 個は横幅に収まらず、数値入力にすると刻みの制約を利用者に押し付けることになるため。
+ * 選択肢が 9 個と多く、選択中の値を閉じた状態でもそのまま文字で読めるプルダウンを採用する。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WidgetBgTransparencySection(step: Int, onStepChange: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val menuScrollState = rememberScrollState()
+    val itemHeightPx = with(LocalDensity.current) { MENU_ITEM_HEIGHT.toPx() }
+
+    // この項目は画面中ほどにあるためメニューは上方向に展開し、9 項目すべてが一度には
+    // 収まらない。開いたときに選択中の項目が見えるよう、その項目が中央に来る位置まで
+    // スクロールしておく（scrollTo は 0..maxValue に丸められるので端の項目でも安全）。
+    LaunchedEffect(expanded) {
+        if (!expanded) return@LaunchedEffect
+        // メニューの高さが確定するまで maxValue / viewportSize は 0 のため、確定を待つ。
+        // 全項目が収まる場合は maxValue が 0 のままとなり、この await は完了しない
+        // （スクロール不要なので、閉じるときのキャンセルに任せてよい）
+        snapshotFlow { menuScrollState.maxValue }.first { it > 0 }
+        val centered = itemHeightPx * step - (menuScrollState.viewportSize - itemHeightPx) / 2f
+        menuScrollState.scrollTo(centered.roundToInt())
+    }
+
+    // 項目名とプルダウンを横に並べて縦幅を詰める。プルダウンは "100%" と
+    // 展開アイコンが収まる固定幅とし、余った幅を項目名に回す
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "ウィジェット背景の透過率",
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+            modifier = Modifier.width(140.dp)
+        ) {
+            OutlinedTextField(
+                value = widgetBgTransparencyLabel(step),
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth()
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                scrollState = menuScrollState
+            ) {
+                for (candidate in 0 until WIDGET_BG_TRANSPARENCY_STEP_COUNT) {
+                    DropdownMenuItem(
+                        text = { Text(widgetBgTransparencyLabel(candidate)) },
+                        onClick = {
+                            onStepChange(clampWidgetBgTransparencyStep(candidate))
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+    Text(
+        "0% は不透明（従来どおり）、100% で壁紙が完全に透ける。文字色は変わらない",
+        style = MaterialTheme.typography.bodySmall
+    )
 }
 
 /** 数値入力欄。範囲外ならエラー表示にし、保存の可否は呼び出し元がまとめて判定する */

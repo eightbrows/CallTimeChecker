@@ -77,3 +77,19 @@ fun presentWidget(result: Result, settings: Settings, planType: PlanType): Widge
         )
     }
 }
+
+/**
+ * spec: docs/spec.md 5.5.3 ウィジェット背景の透過率。
+ * 段階インデックス（0〜8、5.7）を alpha チャンネルの値（255〜0）に変換する。
+ * 0 段階目が完全不透明（255）、8 段階目が完全透明（0）。
+ * 255 は 8 で割り切れないため中間の段階では 0.5 未満の誤差が出るが、見た目には影響しない。
+ */
+fun widgetBgAlpha(step: Int): Int = 255 * (WIDGET_BG_TRANSPARENCY_STEP_COUNT - 1 -
+    clampWidgetBgTransparencyStep(step)) / (WIDGET_BG_TRANSPARENCY_STEP_COUNT - 1)
+
+/**
+ * spec: docs/spec.md 5.5.3 配色リソース（不透明な ARGB）の alpha だけを差し替える。
+ * 色相は変えずに透過率だけを調整するため、RGB はそのまま使う。
+ */
+fun withAlpha(colorArgb: Int, alpha: Int): Int =
+    (alpha shl 24) or (colorArgb and 0x00FFFFFF)

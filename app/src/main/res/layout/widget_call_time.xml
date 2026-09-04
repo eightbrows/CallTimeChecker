@@ -5,7 +5,9 @@
      文字サイズはラベル11sp / 値18sp。以前の4行構成では17spが1x2最小サイズの上限だったが、
      ラベルが小さくなった分の余裕を値に回している。
      値は桁数が増えた場合（例: "20.5 / 1419.5分"）に切れないよう autoSize で 12sp まで自動縮小する。
-     ラベルも「通話時間 / 無料枠残」が 11 文字と長いため 9sp まで縮小できるようにしている。 -->
+     ラベルも「通話時間 / 無料枠残」が 11 文字と長いため 9sp まで縮小できるようにしている。
+     背景色は透過率（5.7）を反映した ARGB を実行時に setBackgroundColor で設定するため、
+     ここでの background 指定はウィジェット選択画面のプレビューと初期表示用。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"

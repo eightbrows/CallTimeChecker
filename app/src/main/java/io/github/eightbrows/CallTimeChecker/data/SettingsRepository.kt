@@ -7,6 +7,7 @@ import io.github.eightbrows.CallTimeChecker.logic.clampMonthlyFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
 import io.github.eightbrows.CallTimeChecker.logic.clampUnitPrice
+import io.github.eightbrows.CallTimeChecker.logic.clampWidgetBgTransparencyStep
 import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesToText
 import io.github.eightbrows.CallTimeChecker.logic.migrateAppSettings
 import io.github.eightbrows.CallTimeChecker.logic.normalizeUnitSec
@@ -21,6 +22,7 @@ private const val KEY_PER_CALL_FREE_MIN = "per_call_free_min"
 private const val KEY_UNIT_SEC = "unit_sec"
 private const val KEY_UNIT_PRICE = "unit_price"
 private const val KEY_EXCLUDE_PREFIXES = "exclude_prefixes"
+private const val KEY_WIDGET_BG_TRANSPARENCY_STEP = "widget_bg_transparency_step"
 
 /**
  * spec: docs/spec.md 5.7 設定項目の永続化（保存先は SharedPreferences）。
@@ -51,7 +53,13 @@ class SettingsRepository(context: Context) {
             unitPrice = clampUnitPrice(prefs.getInt(KEY_UNIT_PRICE, DEFAULT_APP_SETTINGS.unitPrice)),
             excludePrefixes = prefs.getString(KEY_EXCLUDE_PREFIXES, null)
                 ?.let { parseExcludePrefixes(it) }
-                ?: DEFAULT_APP_SETTINGS.excludePrefixes
+                ?: DEFAULT_APP_SETTINGS.excludePrefixes,
+            widgetBgTransparencyStep = clampWidgetBgTransparencyStep(
+                prefs.getInt(
+                    KEY_WIDGET_BG_TRANSPARENCY_STEP,
+                    DEFAULT_APP_SETTINGS.widgetBgTransparencyStep
+                )
+            )
         )
     )
 
@@ -68,6 +76,7 @@ class SettingsRepository(context: Context) {
             .putInt(KEY_UNIT_SEC, settings.unitSec)
             .putInt(KEY_UNIT_PRICE, settings.unitPrice)
             .putString(KEY_EXCLUDE_PREFIXES, excludePrefixesToText(settings.excludePrefixes))
+            .putInt(KEY_WIDGET_BG_TRANSPARENCY_STEP, settings.widgetBgTransparencyStep)
             .apply()
         notifyWidgetsSettingsChanged(appContext)
     }

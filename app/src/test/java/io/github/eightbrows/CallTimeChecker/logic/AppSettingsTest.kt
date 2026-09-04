@@ -376,4 +376,33 @@ class AppSettingsTest {
     fun `validateRange rejects values that overflow Int`() {
         assertEquals("数値を入力してください", validateRange("99999999999", 0, 999))
     }
+
+    // --- ウィジェット背景の透過率（5.7） ---
+
+    @Test
+    fun `widget background transparency defaults to fully opaque`() {
+        assertEquals(0, DEFAULT_APP_SETTINGS.widgetBgTransparencyStep)
+    }
+
+    @Test
+    fun `widgetBgTransparencyLabel renders 12 point 5 percent steps`() {
+        assertEquals(
+            listOf("0%", "12.5%", "25%", "37.5%", "50%", "62.5%", "75%", "87.5%", "100%"),
+            (0 until WIDGET_BG_TRANSPARENCY_STEP_COUNT).map { widgetBgTransparencyLabel(it) }
+        )
+    }
+
+    @Test
+    fun `clampWidgetBgTransparencyStep keeps the step within the available range`() {
+        assertEquals(0, clampWidgetBgTransparencyStep(-1))
+        assertEquals(0, clampWidgetBgTransparencyStep(0))
+        assertEquals(8, clampWidgetBgTransparencyStep(8))
+        assertEquals(8, clampWidgetBgTransparencyStep(9))
+    }
+
+    @Test
+    fun `widgetBgTransparencyLabel clamps out of range steps`() {
+        assertEquals("0%", widgetBgTransparencyLabel(-3))
+        assertEquals("100%", widgetBgTransparencyLabel(99))
+    }
 }

@@ -19,7 +19,9 @@ data class AppSettings(
     val perCallFreeMin: Int,
     val unitSec: Int,
     val unitPrice: Int,
-    val excludePrefixes: List<String>
+    val excludePrefixes: List<String>,
+    /** spec: docs/spec.md 5.7 ウィジェット背景の透過率。0（不透明）〜8（完全透明）の段階インデックス */
+    val widgetBgTransparencyStep: Int
 )
 
 /** spec: docs/spec.md 5.7 初期値 */
@@ -30,7 +32,8 @@ val DEFAULT_APP_SETTINGS = AppSettings(
     perCallFreeMin = 5,
     unitSec = 30,
     unitPrice = 22,
-    excludePrefixes = DEFAULT_EXCLUDE_PREFIXES
+    excludePrefixes = DEFAULT_EXCLUDE_PREFIXES,
+    widgetBgTransparencyStep = 0
 )
 
 /**
@@ -96,6 +99,26 @@ fun clampPerCallFreeMin(min: Int): Int = min.coerceIn(0, 180)
 
 /** spec: docs/spec.md 5.7 単位金額は 0〜999 円 */
 fun clampUnitPrice(price: Int): Int = price.coerceIn(0, 999)
+
+/**
+ * spec: docs/spec.md 5.7 ウィジェット背景の透過率の段階数。
+ * 0%〜100% を 12.5% 刻みで 9 段階。連続値ではなく段階で持つのは、
+ * 保存値を整数にして端数の丸め方を 1 箇所（widgetBgAlpha）に閉じ込めるため。
+ */
+const val WIDGET_BG_TRANSPARENCY_STEP_COUNT = 9
+
+/** spec: docs/spec.md 5.7 透過率の段階は 0〜8 */
+fun clampWidgetBgTransparencyStep(step: Int): Int =
+    step.coerceIn(0, WIDGET_BG_TRANSPARENCY_STEP_COUNT - 1)
+
+/**
+ * spec: docs/spec.md 5.7 透過率の表示名。12.5% 刻みのため、
+ * 端数が出る段階だけ小数第 1 位まで出す（"25%" と "12.5%" が混在する）。
+ */
+fun widgetBgTransparencyLabel(step: Int): String {
+    val permille = clampWidgetBgTransparencyStep(step) * 125
+    return if (permille % 10 == 0) "${permille / 10}%" else "${permille / 10}.${permille % 10}%"
+}
 
 /** spec: docs/spec.md 5.7 課金単位は 30 / 60 のみ */
 fun normalizeUnitSec(sec: Int): Int = if (sec == 60) 60 else 30

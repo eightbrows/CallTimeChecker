@@ -260,4 +260,34 @@ class WidgetPresentationTest {
         assertEquals("4.0分", content.timeValue)
         assertEquals("176円", content.amountValue)
     }
+
+    // --- 背景の透過率（5.5.3 / 5.7） ---
+
+    @Test
+    fun `widgetBgAlpha maps the step range onto the full alpha range`() {
+        assertEquals(255, widgetBgAlpha(0))
+        assertEquals(127, widgetBgAlpha(4))
+        assertEquals(0, widgetBgAlpha(8))
+    }
+
+    @Test
+    fun `widgetBgAlpha decreases monotonically as transparency increases`() {
+        val alphas = (0 until WIDGET_BG_TRANSPARENCY_STEP_COUNT).map { widgetBgAlpha(it) }
+        assertEquals(alphas.sortedDescending(), alphas)
+        assertEquals(alphas.distinct(), alphas)
+    }
+
+    @Test
+    fun `widgetBgAlpha clamps out of range steps`() {
+        assertEquals(255, widgetBgAlpha(-1))
+        assertEquals(0, widgetBgAlpha(99))
+    }
+
+    @Test
+    fun `withAlpha replaces only the alpha channel`() {
+        // 不透明な超過色（#FFD32F2F）の RGB を保ったまま alpha だけが変わる
+        assertEquals(0xFFD32F2F.toInt(), withAlpha(0xFFD32F2F.toInt(), 255))
+        assertEquals(0x7FD32F2F, withAlpha(0xFFD32F2F.toInt(), 127))
+        assertEquals(0x00D32F2F, withAlpha(0xFFD32F2F.toInt(), 0))
+    }
 }

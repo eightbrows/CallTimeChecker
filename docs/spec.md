@@ -135,16 +135,27 @@
 fun periodStartDate(startDay: Int, ym: YearMonth): LocalDate =
     ym.atDay(minOf(startDay, ym.lengthOfMonth()))
 
-fun currentPeriod(startDay: Int, zone: ZoneId): Pair<Long, Long> {
-    val today = LocalDate.now(zone)
-    val thisMonthStart = periodStartDate(startDay, YearMonth.from(today))
-    val start = if (!today.isBefore(thisMonthStart)) thisMonthStart
-                else periodStartDate(startDay, YearMonth.from(today).minusMonths(1))
-    val end = periodStartDate(startDay, YearMonth.from(start).plusMonths(1))
+/** today が属する集計期間の「開始月」 */
+fun periodMonth(startDay: Int, today: LocalDate): YearMonth {
+    val ym = YearMonth.from(today)
+    return if (!today.isBefore(periodStartDate(startDay, ym))) ym else ym.minusMonths(1)
+}
+
+/** 開始月を指定した集計期間 */
+fun periodOf(startDay: Int, zone: ZoneId, month: YearMonth): Pair<Long, Long> {
+    val start = periodStartDate(startDay, month)
+    val end = periodStartDate(startDay, month.plusMonths(1))
     return start.atStartOfDay(zone).toInstant().toEpochMilli() to
            end.atStartOfDay(zone).toInstant().toEpochMilli()
 }
+
+fun currentPeriod(startDay: Int, zone: ZoneId, today: LocalDate): Pair<Long, Long> =
+    periodOf(startDay, zone, periodMonth(startDay, today))
 ```
+
+集計期間は開始月（`YearMonth`）と 1 対 1 に対応する（`periodStartDate()` が開始月から開始日を一意に決めるため）。月送り（5.6）はこの性質を使い、開始月を `YearMonth` 単位でずらして表す。
+
+基準日そのものを `LocalDate.plusMonths()` でずらす方式は採らない。`LocalDate` 側の日クランプと `periodStartDate()` の月末クランプが二重にかかり、起算日が月末にクランプされる月で前月が今月と同じ期間になるため。例えば起算日 31・基準日 2026/3/30 のとき、今月は 2/28-3/31 だが、基準日を 1 ヶ月戻すと 2026/2/28 となり同じ 2/28-3/31 に着地してしまう。開始月を戻せば 2026-02 → 2026-01 となり、正しく 1/31-2/28 が得られる。
 
 #### 5.2.1 仕様上の決定事項
 
@@ -389,6 +400,7 @@ Doze 中は自動更新が遅延するが、用途上許容する。
 | 領域 | 内容 |
 |---|---|
 | ヘッダ | アプリ名「通話時間確認アプリ」と、手動更新・設定のボタン。タブの外に置く |
+| 月送り | 横 1 行。左に相対ラベル（今月 / 1ヶ月前…）、右に「← 前月」「次月 →」。ヘッダとタブの間、タブの外に置く |
 | サマリタブ | 上段（プラン情報）+ 中段「現在の状況」。5.6.1 |
 | 通話履歴タブ | 「履歴集計」+ 通話履歴（内訳リスト）。5.6.2 |
 | 権限 | 未許可時に要求ボタンを表示 |
@@ -396,6 +408,12 @@ Doze 中は自動更新が遅延するが、用途上許容する。
 手動更新・設定のボタンをヘッダに置くのは、どちらのタブからも操作できる必要があるため。タブの中に置くと、通話履歴タブで内訳リストと一緒にスクロールしてしまううえ、リストに使える縦幅も削ってしまう。アプリ名もヘッダに置くことで、両タブ共通の見出しになり、1 行で済む。
 
 ボタンは `FilledTonalButton` とし、高さ 48dp（Material のタップターゲット推奨最小）・水平パディング 16dp・文字 `titleMedium`（16sp）とし、タップ領域を約 69x51dp（従来比およそ 1.5 倍の面積）とする。`TextButton` の既定サイズ（約 58x40dp・14sp）では押しづらく、背景色が無いためボタンだと気付きにくいため。ボタン 2 つで幅を使う分、アプリ名は `TextOverflow.Ellipsis` で省略して折り返さないようにする。水平パディングを 20dp ではなく 16dp としたのは、20dp だと 411dp 幅・`font_scale` 1.15 の実機でアプリ名が省略されてしまったため。
+
+月送りは表示する期間を過去方向へさかのぼるためのもの。両タブの表示期間を同時に切り替えるため、ヘッダと同じくタブの外（ヘッダ行とタブの間）に置き、どちらのタブを見ていても同じ位置で操作できるようにする。ボタンはヘッダの更新・設定と同じ `FilledTonalButton`（高さ 48dp）とし、押せることを背景色で示す。相対ラベルはボタンではないためテキストのままとし、行の左側に置く。ボタン 2 つは右端に寄せて 8dp 間隔で隣り合わせる（ラベル側に `weight(1f)` を持たせる）。両端に振り分けると前月と次月を続けて押すたびに画面幅を横断することになるため（実機で中心間 288dp）、指の移動量を減らす方（同 99dp）を優先する。上に 12dp・下に 16dp の余白を置き、すぐ上のヘッダボタンやすぐ下のタブを誤タップしないようにする（下を厚くしているのは、タブが横幅いっぱいのタップ領域を持つため）。
+
+選択中の月は `monthOffset`（0 = 今月、-1 = 前月…）として画面の状態としてのみ保持し、アプリを終了して開き直すと今月に戻る。過去方向に制限は設けない（記録が無ければ 0 件の結果になるだけ）が、「次月」は今月より先へ進めないよう `monthOffset = 0` のとき無効にする。ラベルを「2026年9月」のような絶対表記にしないのは、起算日が 1 日でない場合（例: 8/25-9/24）にどちらの月を指すのか解釈が割れるため。正確な日付はサマリタブの「期間:」行で確認できる。
+
+設定（定額枠・単価など）は過去の月を選んでいる場合も常に現在の値を使う。設定の変更履歴は保持しない。通話履歴タブ（5.6.2）の内訳リストも同じ期間で絞り込まれる（同一のクエリ結果を使うため自動的に追従する）。ウィジェットは常に今月を表示する（`currentPeriod()` を使い続ける）。
 
 タブはタップに加えて左右スワイプでも切り替えられるようにする。`rememberPagerState` を `LoadedContent` の外（更新のたびに `UiState.Loading` を挟むため）で保持し、`TabRow` の `selectedTabIndex` とタブのタップ（`animateScrollToPage`）を同じ `PagerState` に紐付ける。インジケーターはスワイプ中も指に追従させたいので、`TabRowDefaults.SecondaryIndicator` の位置と幅を `currentPage + currentPageOffsetFraction` で隣のタブとの間を補間して決める（既定のインジケーターは選択確定後にアニメーションするだけで、スワイプ量には追従しない）。`TabRow` は `PrimaryTabRow` / `SecondaryTabRow` に置き換え予定の deprecated API だが、補間に必要な `List<TabPosition>` を `indicator` に渡してくれるのは現状この API のみのため、こちらを使う。
 
@@ -576,6 +594,7 @@ onUpdate / onReceive(ACTION_MANUAL_REFRESH)
 | 対象 | ケース |
 |---|---|
 | 期間算出 | 起算日 1 / 25 / 31、2 月（閏年・平年）、月初日・月末日の境界 |
+| 月送り | 開始月の判定（起算日の前日・当日）、開始月指定での期間算出（起算日 25 / 31、閏年）、月末クランプされる月の前月が今月と別期間になること |
 | 切り上げ | 端数 0 秒、1 秒、29 秒、30 秒、31 秒（`unitSec` = 30 / 60 の両方） |
 | 定額枠 | 枠未使用、枠内、枠ちょうど、枠をまたぐ 1 通話、枠超過 |
 | 通話別無料時間 | 無料時間ちょうど、1 秒超過、大幅超過 |

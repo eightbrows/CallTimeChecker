@@ -53,3 +53,35 @@ Since there is no existing feature architecture (data layer, navigation, DI, net
 ## Git運用
 
 - git commitはユーザー(Yohei)が手動で実施する。Claude Codeは指示がない限りcommitしないこと
+
+## 実機確認の運用
+
+実機(adb接続)で動作確認を行うときは、確認中に画面が自動で消えないよう、開始前後で以下を必ず実行すること。
+
+```
+# 確認開始前: 充電中はスリープしない
+adb shell settings put global stay_on_while_plugged_in 3
+
+# 確認終了後: 元の設定に戻す
+adb shell settings put global stay_on_while_plugged_in 0
+```
+
+確認が途中で失敗・中断した場合も、必ず `0` に戻してから報告すること。
+
+## 通知ルール(モールス信号ビープ)
+
+以下のタイミングでPC側にモールス信号のビープ音を鳴らすこと。
+
+- 実装・検証が完了し、完了報告を出す直前:「EE」
+
+```
+powershell -c "[console]::beep(800,150); Start-Sleep -Milliseconds 450; [console]::beep(800,150)"
+```
+
+- ユーザーの判断・確認が必要な場面(方針確認、実装案の選択依頼など、通常の質問時):「K」
+
+```
+powershell -c "[console]::beep(800,450); Start-Sleep -Milliseconds 150; [console]::beep(800,150); Start-Sleep -Milliseconds 150; [console]::beep(800,450)"
+```
+
+- 実機確認中に端末のロックを検知した場合: 「K」を鳴らした上で、adb経由の解除試行(`input keyevent KEYCODE_WAKEUP`等)は行わず、その場で作業を止めてユーザーにロック解除を求める。ユーザーからの応答を待たずに他の作業や代替の確認方法に進まないこと。

@@ -75,8 +75,9 @@ import io.github.eightbrows.CallTimeChecker.logic.Result
 import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
-import io.github.eightbrows.CallTimeChecker.logic.currentPeriod
 import io.github.eightbrows.CallTimeChecker.logic.formatMinutes
+import io.github.eightbrows.CallTimeChecker.logic.periodMonth
+import io.github.eightbrows.CallTimeChecker.logic.periodOf
 import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
 import io.github.eightbrows.CallTimeChecker.ui.SettingsScreen
@@ -85,6 +86,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -150,6 +152,9 @@ private fun CallTimeCheckerApp(
     var screen by remember { mutableStateOf<Screen>(Screen.Main) }
     var appSettings by remember { mutableStateOf(settingsRepository.load()) }
     var breakdownFilter by remember { mutableStateOf(BreakdownFilter.ALL) }
+    // spec 5.6.1 月送り。今月からの相対位置（0 = 今月、-1 = 前月…）で保持する。
+    // 画面の状態としてだけ持つため、アプリを終了して開き直すと今月に戻る
+    var monthOffset by remember { mutableStateOf(0) }
     // 更新のたびに UiState.Loading を挟むため、選択中のタブは LoadedContent の外で保持する
     val pagerState = rememberPagerState(pageCount = { MainTab.entries.size })
 
@@ -199,7 +204,12 @@ private fun CallTimeCheckerApp(
                 CallLogSync(context.contentResolver, dbHelper).sync()
             }
             val billingSettings = toBillingSettings(appSettings)
-            val period = currentPeriod(appSettings.startDay, zone)
+            // 期間は開始月と 1 対 1 に対応するので、月送りは開始月をずらして表す（5.2）。
+            // 基準日そのものを LocalDate.plusMonths() でずらすと、起算日が月末に
+            // クランプされる月で前月が今月と同じ期間になってしまう
+            val month = periodMonth(appSettings.startDay, LocalDate.now(zone))
+                .plusMonths(monthOffset.toLong())
+            val period = periodOf(appSettings.startDay, zone, month)
             val records = withContext(Dispatchers.IO) {
                 dbHelper.queryRange(period.first, period.second)
             }
@@ -211,7 +221,8 @@ private fun CallTimeCheckerApp(
         }
     }
 
-    LaunchedEffect(hasPermission) {
+    // 月送りボタンで monthOffset が変わったときも集計し直す
+    LaunchedEffect(hasPermission, monthOffset) {
         if (hasPermission) refresh()
     }
 
@@ -250,6 +261,8 @@ private fun CallTimeCheckerApp(
                     planType = appSettings.planType,
                     zone = zone,
                     pagerState = pagerState,
+                    monthOffset = monthOffset,
+                    onMonthOffsetChange = { monthOffset = it },
                     filter = breakdownFilter,
                     onFilterChange = { breakdownFilter = it },
                     onRefresh = { scope.launch { refresh() } },
@@ -298,6 +311,8 @@ private fun LoadedContent(
     planType: PlanType,
     zone: ZoneId,
     pagerState: PagerState,
+    monthOffset: Int,
+    onMonthOffsetChange: (Int) -> Unit,
     filter: BreakdownFilter,
     onFilterChange: (BreakdownFilter) -> Unit,
     onRefresh: () -> Unit,
@@ -317,9 +332,14 @@ private fun LoadedContent(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            HeaderButton("更新", onRefresh)
-            HeaderButton("設定", onOpenSettings)
+            HeaderButton("更新", onClick = onRefresh)
+            HeaderButton("設定", onClick = onOpenSettings)
         }
+        // 月送りはサマリ・通話履歴の両タブに効くため、タブの中ではなくヘッダ側に置く。
+        // 上下の余白は、すぐ上のヘッダボタンやすぐ下のタブを誤タップしないためのもの
+        Spacer(Modifier.height(12.dp))
+        MonthNavigation(monthOffset, onMonthOffsetChange)
+        Spacer(Modifier.height(16.dp))
         val scope = rememberCoroutineScope()
         TabRow(
             selectedTabIndex = pagerState.currentPage,
@@ -378,13 +398,46 @@ private fun PagerTabIndicator(tabPositions: List<TabPosition>, pagerState: Pager
  * 推奨最小である 48dp の高さを確保し、背景色付き（FilledTonalButton）で押せることを明示する。
  */
 @Composable
-private fun HeaderButton(label: String, onClick: () -> Unit) {
+private fun HeaderButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     FilledTonalButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(label, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/**
+ * spec: docs/spec.md 5.6 月送り。
+ * タブの外（タイトル行とタブの間）に置き、どちらのタブを見ていても同じ位置で操作できるようにする。
+ * 中央のラベルは「2026年9月」のような絶対表記にすると、起算日が 1 日でない場合
+ * （例: 8/25-9/24）にどちらの月を指すのか読み手によって解釈が割れるため、
+ * 今月からの相対表記にする。正確な日付はサマリタブの「期間:」行で確認できる。
+ * ボタンはヘッダの更新・設定と同じ FilledTonalButton で、押せることを背景色で示す。
+ * 「次月」は今月より先へは進めないため、monthOffset が 0 のとき無効になる。
+ * ラベルを左・ボタン 2 つを右に寄せて隣り合わせるのは、前月と次月を続けて押すときの
+ * 指の移動量を減らすため（両端に振り分けると 1 回ごとに画面幅を横断することになる）。
+ */
+@Composable
+private fun MonthNavigation(monthOffset: Int, onMonthOffsetChange: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            // 「次月」を無効化しているため monthOffset が正になることはない
+            if (monthOffset == 0) "今月" else "${-monthOffset}ヶ月前",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            // 余った幅をラベル側が持つことでボタン 2 つが右端に寄る
+            modifier = Modifier.weight(1f)
+        )
+        // 過去方向には制限を設けない（記録が無ければ 0 件の結果になるだけ）
+        HeaderButton("← 前月") { onMonthOffsetChange(monthOffset - 1) }
+        HeaderButton("次月 →", enabled = monthOffset < 0) { onMonthOffsetChange(monthOffset + 1) }
     }
 }
 

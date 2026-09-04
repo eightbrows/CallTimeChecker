@@ -137,4 +137,57 @@ class PeriodTest {
         val callAtEnd = end
         assertEquals(false, callAtEnd >= start && callAtEnd < end)
     }
+    // --- periodMonth: today が属する期間の開始月 (5.6.1 月送りの基点) ---
+
+    @Test
+    fun `periodMonth startDay 25, today is day before start, belongs to previous month period`() {
+        assertEquals(YearMonth.of(2026, 7), periodMonth(25, LocalDate.of(2026, 8, 24)))
+    }
+
+    @Test
+    fun `periodMonth startDay 25, today equals start day, belongs to this month period`() {
+        assertEquals(YearMonth.of(2026, 8), periodMonth(25, LocalDate.of(2026, 8, 25)))
+    }
+
+    // --- periodOf: 開始月を指定した期間 (5.6.1 前月 / 次月) ---
+
+    @Test
+    fun `periodOf startDay 25 for January spans Jan 25 to Feb 25`() {
+        val (start, end) = periodOf(25, zone, YearMonth.of(2026, 1))
+        assertEquals(millisOf(LocalDate.of(2026, 1, 25)), start)
+        assertEquals(millisOf(LocalDate.of(2026, 2, 25)), end)
+    }
+
+    @Test
+    fun `periodOf startDay 31 for January clamps the end to non-leap Feb 28`() {
+        val (start, end) = periodOf(31, zone, YearMonth.of(2026, 1))
+        assertEquals(millisOf(LocalDate.of(2026, 1, 31)), start)
+        assertEquals(millisOf(LocalDate.of(2026, 2, 28)), end)
+    }
+
+    @Test
+    fun `periodOf startDay 31 for January clamps the end to leap Feb 29`() {
+        val (start, end) = periodOf(31, zone, YearMonth.of(2024, 1))
+        assertEquals(millisOf(LocalDate.of(2024, 1, 31)), start)
+        assertEquals(millisOf(LocalDate.of(2024, 2, 29)), end)
+    }
+
+    /**
+     * 月送りを「基準日を 1 ヶ月戻す」で実装すると、LocalDate 側の日クランプと
+     * periodStartDate() の月末クランプが二重にかかり、2026/3/30 の前月が今月と
+     * 同じ期間 (2/28-3/31) になってしまう。開始月 (YearMonth) を戻すことで避けている。
+     */
+    @Test
+    fun `previous month of a clamped period is a different period, not the same one`() {
+        val thisMonth = periodMonth(31, LocalDate.of(2026, 3, 30))
+        assertEquals(YearMonth.of(2026, 2), thisMonth)
+
+        val (start, end) = periodOf(31, zone, thisMonth)
+        assertEquals(millisOf(LocalDate.of(2026, 2, 28)), start)
+        assertEquals(millisOf(LocalDate.of(2026, 3, 31)), end)
+
+        val (prevStart, prevEnd) = periodOf(31, zone, thisMonth.minusMonths(1))
+        assertEquals(millisOf(LocalDate.of(2026, 1, 31)), prevStart)
+        assertEquals(millisOf(LocalDate.of(2026, 2, 28)), prevEnd)
+    }
 }

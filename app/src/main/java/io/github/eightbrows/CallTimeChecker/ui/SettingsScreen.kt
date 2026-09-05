@@ -1,7 +1,10 @@
 package io.github.eightbrows.CallTimeChecker.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
@@ -9,12 +12,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -35,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,6 +56,13 @@ import io.github.eightbrows.CallTimeChecker.logic.clampMonthlyFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
 import io.github.eightbrows.CallTimeChecker.logic.WIDGET_BG_TRANSPARENCY_STEP_COUNT
+import io.github.eightbrows.CallTimeChecker.logic.WIDGET_COLOR_PALETTE
+import io.github.eightbrows.CallTimeChecker.logic.clampWarnRemainingMin
+import io.github.eightbrows.CallTimeChecker.logic.clampWidgetColorIndex
+import io.github.eightbrows.CallTimeChecker.logic.defaultWarnRemainingMin
+import io.github.eightbrows.CallTimeChecker.logic.warnRemainingLabel
+import io.github.eightbrows.CallTimeChecker.logic.warnRemainingMinRange
+import io.github.eightbrows.CallTimeChecker.logic.widgetTextColorOn
 import io.github.eightbrows.CallTimeChecker.logic.clampUnitPrice
 import io.github.eightbrows.CallTimeChecker.logic.clampWidgetBgTransparencyStep
 import io.github.eightbrows.CallTimeChecker.logic.effectiveAppSettings
@@ -93,6 +107,10 @@ fun SettingsScreen(
     var unitSec by remember { mutableStateOf(current.unitSec) }
     var unitPriceText by remember { mutableStateOf(current.unitPrice.toString()) }
     var widgetBgTransparencyStep by remember { mutableStateOf(current.widgetBgTransparencyStep) }
+    var warnRemainingText by remember { mutableStateOf(current.warnRemainingMin.toString()) }
+    var colorNormalIndex by remember { mutableStateOf(current.widgetColorNormalIndex) }
+    var colorWarningIndex by remember { mutableStateOf(current.widgetColorWarningIndex) }
+    var colorOverIndex by remember { mutableStateOf(current.widgetColorOverIndex) }
     var excludeText by remember { mutableStateOf(excludePrefixesToText(current.excludePrefixes)) }
     var excludeExpanded by remember { mutableStateOf(false) }
 
@@ -100,18 +118,34 @@ fun SettingsScreen(
     val monthlyFreeRange = monthlyFreeMinRange(planType)
     val perCallFreeRange = perCallFreeMinRange(planType)
 
+    // 警告しきい値の範囲は定額枠に従属する。定額枠を編集している最中の値で都度評価するため、
+    // 定額枠を下げるとその場で警告しきい値の欄がエラーになる（値自体は書き換えない）
+    val monthlyFreeValue = monthlyFreeMinText.trim().toIntOrNull() ?: 0
+    val warnRemainingRange = warnRemainingMinRange(planType, monthlyFreeValue)
+
     val startDayError = validateRange(startDayText, 1, 31)
     val monthlyFreeError = validateRange(monthlyFreeMinText, monthlyFreeRange)
     val perCallFreeError = validateRange(perCallFreeMinText, perCallFreeRange)
     val unitPriceError = validateRange(unitPriceText, 0, 999)
+    val warnRemainingError = validateRange(warnRemainingText, warnRemainingRange)
     val canSave = startDayError == null && monthlyFreeError == null &&
-        perCallFreeError == null && unitPriceError == null
+        perCallFreeError == null && unitPriceError == null && warnRemainingError == null
 
     // プラン形式を切り替えると 0 固定だった欄が有効になる。値が 0 のままだと下限 1 を
     // 満たさず即エラーになるため、その場合だけ初期値を入れておく
     fun selectPlanType(next: PlanType) {
         if (next == PlanType.MONTHLY && (monthlyFreeMinText.trim().toIntOrNull() ?: 0) == 0) {
             monthlyFreeMinText = DEFAULT_APP_SETTINGS.monthlyFreeMin.toString()
+        }
+        // 定額枠が変わると警告しきい値の上限も変わる。範囲外になる場合だけ既定値（残り 20%）に
+        // 戻す。範囲内ならユーザーが設定した残り分数をそのまま残す
+        if (next == PlanType.MONTHLY) {
+            val freeMin = monthlyFreeMinText.trim().toIntOrNull() ?: 0
+            val range = warnRemainingMinRange(next, freeMin)
+            val warn = warnRemainingText.trim().toIntOrNull()
+            if (range != null && (warn == null || warn !in range)) {
+                warnRemainingText = defaultWarnRemainingMin(freeMin).toString()
+            }
         }
         if (next == PlanType.PER_CALL && (perCallFreeMinText.trim().toIntOrNull() ?: 0) == 0) {
             perCallFreeMinText = DEFAULT_APP_SETTINGS.perCallFreeMin.toString()
@@ -180,6 +214,15 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(8.dp))
 
+        WarnRemainingSection(
+            value = warnRemainingText,
+            onValueChange = { warnRemainingText = it },
+            range = warnRemainingRange,
+            error = warnRemainingError,
+            planType = planType
+        )
+        Spacer(Modifier.height(8.dp))
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("課金単位", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.width(8.dp))
@@ -198,6 +241,16 @@ fun SettingsScreen(
         Spacer(Modifier.height(8.dp))
 
         WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
+        Spacer(Modifier.height(8.dp))
+
+        WidgetColorSection(
+            normalIndex = colorNormalIndex,
+            warningIndex = colorWarningIndex,
+            overIndex = colorOverIndex,
+            onNormalChange = { colorNormalIndex = it },
+            onWarningChange = { colorWarningIndex = it },
+            onOverChange = { colorOverIndex = it }
+        )
         Spacer(Modifier.height(16.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -218,7 +271,16 @@ fun SettingsScreen(
                         unitSec = normalizeUnitSec(unitSec),
                         unitPrice = clampUnitPrice(unitPriceText.trim().toIntOrNull() ?: current.unitPrice),
                         excludePrefixes = parseExcludePrefixes(excludeText),
-                        widgetBgTransparencyStep = clampWidgetBgTransparencyStep(widgetBgTransparencyStep)
+                        widgetBgTransparencyStep = clampWidgetBgTransparencyStep(widgetBgTransparencyStep),
+                        warnRemainingMin = clampWarnRemainingMin(
+                            warnRemainingText.trim().toIntOrNull() ?: current.warnRemainingMin,
+                            clampMonthlyFreeMin(
+                                monthlyFreeMinText.trim().toIntOrNull() ?: current.monthlyFreeMin
+                            )
+                        ),
+                        widgetColorNormalIndex = clampWidgetColorIndex(colorNormalIndex),
+                        widgetColorWarningIndex = clampWidgetColorIndex(colorWarningIndex),
+                        widgetColorOverIndex = clampWidgetColorIndex(colorOverIndex)
                     )
                     onSave(effectiveAppSettings(raw))
                 }
@@ -314,6 +376,159 @@ private fun WidgetBgTransparencySection(step: Int, onStepChange: (Int) -> Unit) 
         "0% は不透明（従来どおり）、100% で壁紙が完全に透ける。文字色は変わらない",
         style = MaterialTheme.typography.bodySmall
     )
+}
+
+/**
+ * spec: docs/spec.md 5.7 警告しきい値（定額枠の残り時間、分）。
+ * 「残り何分になったら警告色にするか」を分で入力する。刻みが 1 分と細かく、かつ
+ * 「あと数分だけ動かしたい」調整が多いため、直接入力に +/- ボタンを添えた形にする。
+ * 意味を持つのは月間定額型のときだけなので、それ以外ではグレーアウトする（定額枠と同じ扱い）。
+ */
+@Composable
+private fun WarnRemainingSection(
+    value: String,
+    onValueChange: (String) -> Unit,
+    range: IntRange?,
+    error: String?,
+    planType: PlanType
+) {
+    val current = value.trim().toIntOrNull()
+    // 範囲の端では対応するボタンを無効化する。数値として読めない入力中は両方とも無効
+    val canDecrease = range != null && current != null && current > range.first
+    val canIncrease = range != null && current != null && current < range.last
+    val enabled = range != null
+
+    // 項目名・エラー・注記は行の外に出す。他の数値欄と同じく枠内ラベルと supportingText に
+    // すると、+/- ボタンで狭くなった欄の中で 2 行に折り返してしまうため
+    Text("警告しきい値（残り分）", style = MaterialTheme.typography.bodySmall)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        StepperButton("−", enabled = canDecrease) {
+            if (current != null) onValueChange((current - 1).toString())
+        }
+        Spacer(Modifier.width(8.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = { onValueChange(it.filter(Char::isDigit)) },
+            enabled = enabled,
+            isError = error != null,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.width(110.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        StepperButton("+", enabled = canIncrease) {
+            if (current != null) onValueChange((current + 1).toString())
+        }
+        Spacer(Modifier.width(12.dp))
+        if (enabled && current != null) {
+            Text(
+                // 入力値そのものの言い換え。単位（残り時間であること）を取り違えないようにする
+                warnRemainingLabel(current),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+    val note = when {
+        error != null -> error
+        enabled -> null
+        planType == PlanType.MONTHLY -> "定額枠が1分のため警告色は使用しない"
+        else -> "${planTypeLabel(planType)}では使用しない"
+    }
+    if (note != null) {
+        Text(
+            note,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (error != null) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
+    }
+}
+
+/** +/- ボタン。タップターゲットの推奨最小 48dp を確保する */
+@Composable
+private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    FilledTonalIconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(48.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+/**
+ * spec: docs/spec.md 5.5.3 / 5.7 ウィジェット背景色。
+ * 通常色 / 警告色 / 超過色それぞれをプリセットパレットから選ぶ。任意色（カラーピッカー）に
+ * しないのは、文字が読めない・状態が見分けられない配色を作れてしまうため。
+ * 透過率（5.7）は 3 色共通のまま。
+ */
+@Composable
+private fun WidgetColorSection(
+    normalIndex: Int,
+    warningIndex: Int,
+    overIndex: Int,
+    onNormalChange: (Int) -> Unit,
+    onWarningChange: (Int) -> Unit,
+    onOverChange: (Int) -> Unit
+) {
+    Text("ウィジェット背景色", style = MaterialTheme.typography.titleMedium)
+    WidgetColorRow("通常色", normalIndex, onNormalChange)
+    WidgetColorRow("警告色", warningIndex, onWarningChange)
+    WidgetColorRow("超過色", overIndex, onOverChange)
+    Text(
+        "文字色は背景色の明るさから自動で決まる。透過率は3色共通",
+        style = MaterialTheme.typography.bodySmall
+    )
+}
+
+/**
+ * 1 つの役割ぶんの色見本。8 色を等幅で並べるため個々の幅は weight に任せる
+ * （固定幅にすると画面幅の狭い端末で溢れる）。選択中は枠とチェックで示す。
+ */
+@Composable
+private fun WidgetColorRow(label: String, selectedIndex: Int, onSelect: (Int) -> Unit) {
+    Text(label, style = MaterialTheme.typography.bodySmall)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        WIDGET_COLOR_PALETTE.forEachIndexed { index, palette ->
+            val selected = index == selectedIndex
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp)
+                    .background(Color(palette.argb), RoundedCornerShape(4.dp))
+                    .border(
+                        width = if (selected) 3.dp else 1.dp,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
+                        shape = RoundedCornerShape(4.dp)
+                    )
+                    .clickable { onSelect(index) }
+            ) {
+                // 枠だけでは選択中が分かりにくいため、色見本の上にチェックを重ねる。
+                // 見本の色に対して読める文字色はウィジェット本体と同じ規則で決める
+                if (selected) {
+                    Text(
+                        "✓",
+                        color = Color(widgetTextColorOn(palette.argb)),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** 数値入力欄。範囲外ならエラー表示にし、保存の可否は呼び出し元がまとめて判定する */

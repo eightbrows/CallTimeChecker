@@ -21,7 +21,21 @@ data class AppSettings(
     val unitPrice: Int,
     val excludePrefixes: List<String>,
     /** spec: docs/spec.md 5.7 ウィジェット背景の透過率。0（不透明）〜8（完全透明）の段階インデックス */
-    val widgetBgTransparencyStep: Int
+    val widgetBgTransparencyStep: Int,
+    /**
+     * spec: docs/spec.md 5.7 警告色に切り替わる「定額枠の残り時間」（分）。
+     * 消費量ではなく残量で持つのは、「あと何分使えるか」が利用者の関心そのものだから。
+     * 定額枠を変えても利用者が明示的に変えない限りこの値は動かさない
+     * （残り 10 分で警告、という設定は定額枠が何分でも同じ意味を持つ）。
+     * 意味を持つのは月間定額型のときだけ（5.5.3）。
+     */
+    val warnRemainingMin: Int,
+    /** spec: docs/spec.md 5.7 ウィジェット背景色（通常色）のパレット添字 */
+    val widgetColorNormalIndex: Int,
+    /** spec: docs/spec.md 5.7 ウィジェット背景色（警告色）のパレット添字 */
+    val widgetColorWarningIndex: Int,
+    /** spec: docs/spec.md 5.7 ウィジェット背景色（超過色）のパレット添字 */
+    val widgetColorOverIndex: Int
 )
 
 /** spec: docs/spec.md 5.7 初期値 */
@@ -33,7 +47,12 @@ val DEFAULT_APP_SETTINGS = AppSettings(
     unitSec = 30,
     unitPrice = 22,
     excludePrefixes = DEFAULT_EXCLUDE_PREFIXES,
-    widgetBgTransparencyStep = 0
+    widgetBgTransparencyStep = 0,
+    // 定額枠 70 分の 20%。消費量で言えば 80% に達した時点で、従来と同じ切り替わり位置
+    warnRemainingMin = 14,
+    widgetColorNormalIndex = WIDGET_COLOR_INDEX_WHITE,
+    widgetColorWarningIndex = WIDGET_COLOR_INDEX_ORANGE,
+    widgetColorOverIndex = WIDGET_COLOR_INDEX_RED
 )
 
 /**
@@ -70,7 +89,21 @@ fun derivePlanType(monthlyFreeMin: Int, perCallFreeMin: Int): PlanType = when {
  */
 fun migrateAppSettings(settings: AppSettings): AppSettings {
     val planType = derivePlanType(settings.monthlyFreeMin, settings.perCallFreeMin)
-    return effectiveAppSettings(settings.copy(planType = planType))
+    val effective = effectiveAppSettings(settings.copy(planType = planType))
+    // 警告しきい値も同じ理由で正規化する。範囲は定額枠に依存するため、定額枠が
+    // 外部で書き換えられていると範囲外になり得る（範囲が無いプラン形式では値を保つ）
+    val range = warnRemainingMinRange(planType, effective.monthlyFreeMin)
+    val warn = if (range != null && effective.warnRemainingMin !in range) {
+        defaultWarnRemainingMin(effective.monthlyFreeMin)
+    } else {
+        effective.warnRemainingMin
+    }
+    return effective.copy(
+        warnRemainingMin = warn,
+        widgetColorNormalIndex = clampWidgetColorIndex(effective.widgetColorNormalIndex),
+        widgetColorWarningIndex = clampWidgetColorIndex(effective.widgetColorWarningIndex),
+        widgetColorOverIndex = clampWidgetColorIndex(effective.widgetColorOverIndex)
+    )
 }
 
 /**
@@ -119,6 +152,39 @@ fun widgetBgTransparencyLabel(step: Int): String {
     val permille = clampWidgetBgTransparencyStep(step) * 125
     return if (permille % 10 == 0) "${permille / 10}%" else "${permille / 10}.${permille % 10}%"
 }
+
+/**
+ * spec: docs/spec.md 5.7 警告しきい値（残り時間）の入力範囲。月間定額型のときだけ入力でき、
+ * 上限は「定額枠 − 1」。残りが定額枠と同じ値、つまり消費 0 分で既に警告色になるのは無意味なため。
+ * 定額枠が 1 分だと範囲が空になるので、その場合も入力対象外（null）とし、警告色を使わない。
+ */
+fun warnRemainingMinRange(planType: PlanType, monthlyFreeMin: Int): IntRange? =
+    if (planType == PlanType.MONTHLY && monthlyFreeMin >= 2) 1..(monthlyFreeMin - 1) else null
+
+/**
+ * spec: docs/spec.md 5.7 警告しきい値（残り時間）の既定値。定額枠の 20%（切り捨て）とする。
+ * 消費量で言えば 80% に達した時点であり、しきい値が設定項目になる前の
+ * 「使用率 80% で警告」と同じ切り替わり位置になる。定額枠 70 分なら残り 14 分。
+ */
+fun defaultWarnRemainingMin(monthlyFreeMin: Int): Int {
+    val range = warnRemainingMinRange(PlanType.MONTHLY, monthlyFreeMin) ?: return 0
+    return (monthlyFreeMin / 5).coerceIn(range.first, range.last)
+}
+
+/** spec: docs/spec.md 5.7 警告しきい値（残り時間）は 1〜(定額枠 − 1)。範囲が無いときは 0 に倒す */
+fun clampWarnRemainingMin(min: Int, monthlyFreeMin: Int): Int {
+    val range = warnRemainingMinRange(PlanType.MONTHLY, monthlyFreeMin) ?: return 0
+    return min.coerceIn(range.first, range.last)
+}
+
+/**
+ * spec: docs/spec.md 5.7 警告しきい値の表示（`残り14分`）。
+ * 残量そのものが設定値なので、定額枠に対する割合は併記しない。
+ */
+fun warnRemainingLabel(warnRemainingMin: Int): String = "残り${warnRemainingMin}分"
+
+/** spec: docs/spec.md 5.7 ウィジェット背景色のパレット添字は 0〜(パレット長 − 1) */
+fun clampWidgetColorIndex(index: Int): Int = index.coerceIn(0, WIDGET_COLOR_PALETTE.lastIndex)
 
 /** spec: docs/spec.md 5.7 課金単位は 30 / 60 のみ */
 fun normalizeUnitSec(sec: Int): Int = if (sec == 60) 60 else 30

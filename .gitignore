@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+/docs/attention.wav
+/docs/complete.wav

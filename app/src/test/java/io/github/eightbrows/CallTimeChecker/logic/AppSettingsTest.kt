@@ -405,4 +405,114 @@ class AppSettingsTest {
         assertEquals("0%", widgetBgTransparencyLabel(-3))
         assertEquals("100%", widgetBgTransparencyLabel(99))
     }
+    // --- 警告しきい値（5.7 の「残り◯分」） ---
+
+    @Test
+    fun `warn remaining defaults to 20 percent of the monthly quota`() {
+        // 残り 20% ＝ 消費 80% で、しきい値が設定項目になる前と同じ切り替わり位置
+        assertEquals(14, DEFAULT_APP_SETTINGS.warnRemainingMin)
+        assertEquals(14, defaultWarnRemainingMin(70))
+        assertEquals(20, defaultWarnRemainingMin(100))
+    }
+
+    @Test
+    fun `warn remaining default stays inside the range for tiny quotas`() {
+        // 20% が 1 分未満になる定額枠でも、下限の残り 1 分に丸める
+        assertEquals(1, defaultWarnRemainingMin(3))
+        assertEquals(1, defaultWarnRemainingMin(2))
+        // 定額枠 1 分では警告色の帯が存在しない
+        assertEquals(0, defaultWarnRemainingMin(1))
+    }
+
+    @Test
+    fun `warn remaining range stops one minute below the monthly quota`() {
+        assertEquals(1..69, warnRemainingMinRange(PlanType.MONTHLY, 70))
+        assertEquals(1..1, warnRemainingMinRange(PlanType.MONTHLY, 2))
+    }
+
+    @Test
+    fun `warn remaining has no range outside the monthly plan`() {
+        assertNull(warnRemainingMinRange(PlanType.PER_CALL, 70))
+        assertNull(warnRemainingMinRange(PlanType.PAY_AS_YOU_GO, 70))
+        // 定額枠 1 分では 1..0 となり範囲が空になるため入力対象外
+        assertNull(warnRemainingMinRange(PlanType.MONTHLY, 1))
+        assertNull(warnRemainingMinRange(PlanType.MONTHLY, 0))
+    }
+
+    @Test
+    fun `clampWarnRemainingMin keeps the remaining minutes within the quota`() {
+        assertEquals(69, clampWarnRemainingMin(70, 70))
+        assertEquals(69, clampWarnRemainingMin(999, 70))
+        assertEquals(1, clampWarnRemainingMin(0, 70))
+        assertEquals(56, clampWarnRemainingMin(56, 70))
+        // 範囲が無いときは 0（警告色を使わない）
+        assertEquals(0, clampWarnRemainingMin(56, 1))
+    }
+
+    @Test
+    fun `warnRemainingLabel spells out that the value is remaining time`() {
+        assertEquals("残り14分", warnRemainingLabel(14))
+        assertEquals("残り1分", warnRemainingLabel(1))
+    }
+
+    @Test
+    fun `migration resets a warn remaining that no longer fits the quota`() {
+        // 定額枠を外から 40 分に書き換えられた場合。残り 56 分は範囲外なので既定値へ戻す
+        val migrated = migrateAppSettings(
+            DEFAULT_APP_SETTINGS.copy(monthlyFreeMin = 40, warnRemainingMin = 56)
+        )
+        assertEquals(8, migrated.warnRemainingMin)
+    }
+
+    @Test
+    fun `migration keeps a warn remaining that still fits the quota`() {
+        val migrated = migrateAppSettings(
+            DEFAULT_APP_SETTINGS.copy(monthlyFreeMin = 100, warnRemainingMin = 56)
+        )
+        assertEquals(56, migrated.warnRemainingMin)
+    }
+
+    @Test
+    fun `migration keeps the warn remaining for plans that do not use it`() {
+        // 1 通話定額型に切り替えても、月間定額型に戻したときのために値は残す
+        val migrated = migrateAppSettings(
+            DEFAULT_APP_SETTINGS.copy(
+                monthlyFreeMin = 0,
+                perCallFreeMin = 5,
+                warnRemainingMin = 56
+            )
+        )
+        assertEquals(PlanType.PER_CALL, migrated.planType)
+        assertEquals(56, migrated.warnRemainingMin)
+    }
+
+    // --- ウィジェット背景色（5.7） ---
+
+    @Test
+    fun `widget colors default to the previous fixed palette`() {
+        assertEquals(WIDGET_COLOR_INDEX_WHITE, DEFAULT_APP_SETTINGS.widgetColorNormalIndex)
+        assertEquals(WIDGET_COLOR_INDEX_ORANGE, DEFAULT_APP_SETTINGS.widgetColorWarningIndex)
+        assertEquals(WIDGET_COLOR_INDEX_RED, DEFAULT_APP_SETTINGS.widgetColorOverIndex)
+    }
+
+    @Test
+    fun `clampWidgetColorIndex keeps the index inside the palette`() {
+        assertEquals(0, clampWidgetColorIndex(-1))
+        assertEquals(0, clampWidgetColorIndex(0))
+        assertEquals(WIDGET_COLOR_PALETTE.lastIndex, clampWidgetColorIndex(WIDGET_COLOR_PALETTE.size))
+    }
+
+    @Test
+    fun `migration clamps out of range color indices`() {
+        val migrated = migrateAppSettings(
+            DEFAULT_APP_SETTINGS.copy(
+                widgetColorNormalIndex = -5,
+                widgetColorWarningIndex = 99,
+                widgetColorOverIndex = 3
+            )
+        )
+        assertEquals(0, migrated.widgetColorNormalIndex)
+        assertEquals(WIDGET_COLOR_PALETTE.lastIndex, migrated.widgetColorWarningIndex)
+        assertEquals(3, migrated.widgetColorOverIndex)
+    }
 }

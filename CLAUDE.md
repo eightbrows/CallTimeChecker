@@ -68,20 +68,22 @@ adb shell settings put global stay_on_while_plugged_in 0
 
 確認が途中で失敗・中断した場合も、必ず `0` に戻してから報告すること。
 
-## 通知ルール(モールス信号ビープ)
+## 通知ルール(音声ファイル再生)
 
-以下のタイミングでPC側にモールス信号のビープ音を鳴らすこと。
+以下のタイミングでPC側に音声ファイルを再生すること。パスはリポジトリルートからの相対パスのため、カレントディレクトリがリポジトリルートであること。
 
-- 実装・検証が完了し、完了報告を出す直前:「EE」
-
-```
-powershell -c "[console]::beep(800,150); Start-Sleep -Milliseconds 450; [console]::beep(800,150)"
-```
-
-- ユーザーの判断・確認が必要な場面(方針確認、実装案の選択依頼など、通常の質問時):「K」
+- 実装・検証が完了し、完了報告を出す直前:
 
 ```
-powershell -c "[console]::beep(800,450); Start-Sleep -Milliseconds 150; [console]::beep(800,150); Start-Sleep -Milliseconds 150; [console]::beep(800,450)"
+powershell -c "(New-Object Media.SoundPlayer 'docs/complete.wav').PlaySync()"
 ```
 
-- 実機確認中に端末のロックを検知した場合: 「K」を鳴らした上で、adb経由の解除試行(`input keyevent KEYCODE_WAKEUP`等)は行わず、その場で作業を止めてユーザーにロック解除を求める。ユーザーからの応答を待たずに他の作業や代替の確認方法に進まないこと。
+- ユーザーの判断・確認が必要な場面(方針確認、実装案の選択依頼など、通常の質問時):
+
+```
+powershell -c "(New-Object Media.SoundPlayer 'docs/attention.wav').PlaySync()"
+```
+
+- 実機確認中に端末のロックを検知した場合: attention.wavを再生した上で、adb経由の解除試行(`input keyevent KEYCODE_WAKEUP`等)は行わず、その場で作業を止めてユーザーにロック解除を求める。ユーザーからの応答を待たずに他の作業や代替の確認方法に進まないこと。
+  - attention.wavを再生した後、AskUserQuestionツールを使って「端末のロックを解除しましたか?」という質問と選択肢(例:「はい、解除しました」「いいえ、まだです」)を提示すること。テキストメッセージでの報告だけで済ませず、この専用ツールで明示的に待機状態にする。
+  - 「はい」が選択されるまで作業を再開しないこと。

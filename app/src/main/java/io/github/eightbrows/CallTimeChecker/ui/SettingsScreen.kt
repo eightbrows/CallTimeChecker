@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -153,150 +154,188 @@ fun SettingsScreen(
         planType = next
     }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-
-        Text("プラン形式", style = MaterialTheme.typography.titleMedium)
-        Row(Modifier.fillMaxWidth()) {
-            PlanTypeOption(PlanType.MONTHLY, planType, Modifier.weight(1f)) { selectPlanType(it) }
-            PlanTypeOption(PlanType.PER_CALL, planType, Modifier.weight(1f)) { selectPlanType(it) }
-            PlanTypeOption(PlanType.PAY_AS_YOU_GO, planType, Modifier.weight(1f)) { selectPlanType(it) }
-        }
-        Spacer(Modifier.height(8.dp))
-
-        // 起算日・単位金額はプラン形式に関係なく常に有効な独立パラメータ
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            NumberField(
-                value = startDayText,
-                onValueChange = { startDayText = it },
-                label = "起算日（日）",
-                error = startDayError,
-                modifier = Modifier.weight(1f)
-            )
-            NumberField(
-                value = unitPriceText,
-                onValueChange = { unitPriceText = it },
-                label = "単位金額（円）",
-                error = unitPriceError,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-
-        // 定額枠と通話別無料時間は対の項目。プラン形式によって最低でも一方は 0 固定になるため横に並べる
-        // （従量課金では両方 0 固定）
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            NumberField(
-                value = if (monthlyFreeRange != null) monthlyFreeMinText else "0",
-                onValueChange = { monthlyFreeMinText = it },
-                label = "定額枠（分）",
-                error = monthlyFreeError,
-                enabled = monthlyFreeRange != null,
-                disabledNote = "${planTypeLabel(planType)}では0固定",
-                modifier = Modifier.weight(1f)
-            )
-            NumberField(
-                value = if (perCallFreeRange != null) perCallFreeMinText else "0",
-                onValueChange = { perCallFreeMinText = it },
-                label = "通話別無料（分）",
-                error = perCallFreeError,
-                enabled = perCallFreeRange != null,
-                disabledNote = "${planTypeLabel(planType)}では0固定",
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-
-        WarnRemainingSection(
-            value = warnRemainingText,
-            onValueChange = { warnRemainingText = it },
-            range = warnRemainingRange,
-            error = warnRemainingError,
-            planType = planType
+    // 保存する値の組み立て。固定ヘッダの「保存」から呼ぶため、ボタンの中には置かない。
+    // canSave のときのみ呼ばれるため clamp は保険で、値は既に範囲内
+    fun buildSettings(): AppSettings {
+        val raw = AppSettings(
+            planType = planType,
+            startDay = clampStartDay(startDayText.trim().toIntOrNull() ?: current.startDay),
+            monthlyFreeMin = clampMonthlyFreeMin(
+                monthlyFreeMinText.trim().toIntOrNull() ?: current.monthlyFreeMin
+            ),
+            perCallFreeMin = clampPerCallFreeMin(
+                perCallFreeMinText.trim().toIntOrNull() ?: current.perCallFreeMin
+            ),
+            unitSec = normalizeUnitSec(unitSec),
+            unitPrice = clampUnitPrice(unitPriceText.trim().toIntOrNull() ?: current.unitPrice),
+            excludePrefixes = parseExcludePrefixes(excludeText),
+            widgetBgTransparencyStep = clampWidgetBgTransparencyStep(widgetBgTransparencyStep),
+            warnRemainingMin = clampWarnRemainingMin(
+                warnRemainingText.trim().toIntOrNull() ?: current.warnRemainingMin,
+                clampMonthlyFreeMin(
+                    monthlyFreeMinText.trim().toIntOrNull() ?: current.monthlyFreeMin
+                )
+            ),
+            widgetColorNormalIndex = clampWidgetColorIndex(colorNormalIndex),
+            widgetColorWarningIndex = clampWidgetColorIndex(colorWarningIndex),
+            widgetColorOverIndex = clampWidgetColorIndex(colorOverIndex)
         )
-        Spacer(Modifier.height(8.dp))
+        return effectiveAppSettings(raw)
+    }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("課金単位", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.width(8.dp))
-            UnitSecOption(30, unitSec) { unitSec = it }
-            UnitSecOption(60, unitSec) { unitSec = it }
-        }
-        Spacer(Modifier.height(8.dp))
-
-        ExcludePrefixesSection(
-            text = excludeText,
-            expanded = excludeExpanded,
-            onToggle = { excludeExpanded = !excludeExpanded },
-            onTextChange = { excludeText = it },
-            onReset = { excludeText = excludePrefixesToText(DEFAULT_EXCLUDE_PREFIXES) }
+    Column(modifier.fillMaxSize().imePadding()) {
+        SettingsHeader(
+            canSave = canSave,
+            onCancel = onBack,
+            onSave = { onSave(buildSettings()) }
         )
-        Spacer(Modifier.height(8.dp))
-
-        WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
-        Spacer(Modifier.height(8.dp))
-
-        WidgetColorSection(
-            normalIndex = colorNormalIndex,
-            warningIndex = colorWarningIndex,
-            overIndex = colorOverIndex,
-            onNormalChange = { colorNormalIndex = it },
-            onWarningChange = { colorWarningIndex = it },
-            onOverChange = { colorOverIndex = it }
-        )
-        Spacer(Modifier.height(16.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onBack) { Text("キャンセル") }
-            Button(
-                enabled = canSave,
-                onClick = {
-                    // canSave のときのみ到達するため clamp は保険。値は既に範囲内
-                    val raw = AppSettings(
-                        planType = planType,
-                        startDay = clampStartDay(startDayText.trim().toIntOrNull() ?: current.startDay),
-                        monthlyFreeMin = clampMonthlyFreeMin(
-                            monthlyFreeMinText.trim().toIntOrNull() ?: current.monthlyFreeMin
-                        ),
-                        perCallFreeMin = clampPerCallFreeMin(
-                            perCallFreeMinText.trim().toIntOrNull() ?: current.perCallFreeMin
-                        ),
-                        unitSec = normalizeUnitSec(unitSec),
-                        unitPrice = clampUnitPrice(unitPriceText.trim().toIntOrNull() ?: current.unitPrice),
-                        excludePrefixes = parseExcludePrefixes(excludeText),
-                        widgetBgTransparencyStep = clampWidgetBgTransparencyStep(widgetBgTransparencyStep),
-                        warnRemainingMin = clampWarnRemainingMin(
-                            warnRemainingText.trim().toIntOrNull() ?: current.warnRemainingMin,
-                            clampMonthlyFreeMin(
-                                monthlyFreeMinText.trim().toIntOrNull() ?: current.monthlyFreeMin
-                            )
-                        ),
-                        widgetColorNormalIndex = clampWidgetColorIndex(colorNormalIndex),
-                        widgetColorWarningIndex = clampWidgetColorIndex(colorWarningIndex),
-                        widgetColorOverIndex = clampWidgetColorIndex(colorOverIndex)
-                    )
-                    onSave(effectiveAppSettings(raw))
-                }
-            ) { Text("保存") }
-        }
-        Spacer(Modifier.height(16.dp))
-
         HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
-        PermissionSection(hasPermission, onRequestPermission, onOpenAppSettings)
-        Spacer(Modifier.height(12.dp))
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            Text("プラン形式", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth()) {
+                PlanTypeOption(PlanType.MONTHLY, planType, Modifier.weight(1f)) { selectPlanType(it) }
+                PlanTypeOption(PlanType.PER_CALL, planType, Modifier.weight(1f)) { selectPlanType(it) }
+                PlanTypeOption(PlanType.PAY_AS_YOU_GO, planType, Modifier.weight(1f)) { selectPlanType(it) }
+            }
+            Spacer(Modifier.height(8.dp))
 
+            // 起算日・単位金額はプラン形式に関係なく常に有効な独立パラメータ
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                NumberField(
+                    value = startDayText,
+                    onValueChange = { startDayText = it },
+                    label = "起算日（日）",
+                    error = startDayError,
+                    modifier = Modifier.weight(1f)
+                )
+                NumberField(
+                    value = unitPriceText,
+                    onValueChange = { unitPriceText = it },
+                    label = "単位金額（円）",
+                    error = unitPriceError,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
+            // 定額枠と通話別無料時間は対の項目。プラン形式によって最低でも一方は 0 固定になるため横に並べる
+            // （従量課金では両方 0 固定）
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                NumberField(
+                    value = if (monthlyFreeRange != null) monthlyFreeMinText else "0",
+                    onValueChange = { monthlyFreeMinText = it },
+                    label = "定額枠（分）",
+                    error = monthlyFreeError,
+                    enabled = monthlyFreeRange != null,
+                    disabledNote = "${planTypeLabel(planType)}では0固定",
+                    modifier = Modifier.weight(1f)
+                )
+                NumberField(
+                    value = if (perCallFreeRange != null) perCallFreeMinText else "0",
+                    onValueChange = { perCallFreeMinText = it },
+                    label = "通話別無料（分）",
+                    error = perCallFreeError,
+                    enabled = perCallFreeRange != null,
+                    disabledNote = "${planTypeLabel(planType)}では0固定",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
+            WarnRemainingSection(
+                value = warnRemainingText,
+                onValueChange = { warnRemainingText = it },
+                range = warnRemainingRange,
+                error = warnRemainingError,
+                planType = planType
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("課金単位", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.width(8.dp))
+                UnitSecOption(30, unitSec) { unitSec = it }
+                UnitSecOption(60, unitSec) { unitSec = it }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            ExcludePrefixesSection(
+                text = excludeText,
+                expanded = excludeExpanded,
+                onToggle = { excludeExpanded = !excludeExpanded },
+                onTextChange = { excludeText = it },
+                onReset = { excludeText = excludePrefixesToText(DEFAULT_EXCLUDE_PREFIXES) }
+            )
+            Spacer(Modifier.height(8.dp))
+
+            WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
+            Spacer(Modifier.height(8.dp))
+
+            WidgetColorSection(
+                normalIndex = colorNormalIndex,
+                warningIndex = colorWarningIndex,
+                overIndex = colorOverIndex,
+                onNormalChange = { colorNormalIndex = it },
+                onWarningChange = { colorWarningIndex = it },
+                onOverChange = { colorOverIndex = it }
+            )
+            Spacer(Modifier.height(16.dp))
+
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+            PermissionSection(hasPermission, onRequestPermission, onOpenAppSettings)
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                "バージョン: ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+/**
+ * spec: docs/spec.md 5.7 設定画面の固定ヘッダ。
+ * 設定項目は縦に長く、以前は画面末尾まで送らないと保存・取り消しができなかったため、
+ * 見出しと一緒に上部へ固定してスクロール領域から分離する。
+ * 「保存」は主操作なので塗りボタン（Button）、「キャンセル」は副操作なので枠線ボタン
+ * （OutlinedButton）とする。両者を同じ見た目にすると、押し間違いのコストが非対称
+ * （保存の取り消しは再入力が必要）なのに見分けがつかないため。入力エラー中は「保存」が
+ * 無効になるので、無効状態がはっきり出る塗りボタンを保存側に割り当てる。
+ * サイズはアプリ本体のヘッダ（HeaderButton）と同じ 48dp 高・titleMedium に揃える。
+ */
+@Composable
+private fun SettingsHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Text(
-            "バージョン: ${BuildConfig.VERSION_NAME}",
-            style = MaterialTheme.typography.bodySmall
+            "設定",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
         )
+        OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("キャンセル", style = MaterialTheme.typography.titleMedium)
+        }
+        Button(
+            onClick = onSave,
+            enabled = canSave,
+            modifier = Modifier.heightIn(min = 48.dp)
+        ) {
+            Text("保存", style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 

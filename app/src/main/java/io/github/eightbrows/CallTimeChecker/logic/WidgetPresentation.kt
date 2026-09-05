@@ -6,15 +6,25 @@ import java.util.Locale
 enum class WidgetColor { NORMAL, WARNING, OVER }
 
 /**
+ * spec: docs/spec.md 5.5.1 ウィジェットの 1 項目。
+ * 「ラベル（小）+ 数字（大）+ 単位（小）」を 1 つの TextView にまとめ、
+ * 大きさの差はスパンで付けて描画するため、大きさの違う 3 つの部品として持つ。
+ */
+data class WidgetLine(val label: String, val value: String, val unit: String)
+
+/**
  * spec: docs/spec.md 5.5.1 ウィジェット表示内容。
- * 「ラベル（小）+ 値（大）」のブロック 2 つ分。ラベルも値もプラン形式によって変わるため、
- * 文字列の組み立てはすべてここで行い、Provider 側はビューへの割り当てだけを行う。
+ * 上段（3/5）は通話時間と無料枠、下段（2/5）は通話金額。
+ * ラベルも数字もプラン形式によって変わるため、文字列の組み立てはすべてここで行い、
+ * Provider 側はビューへの割り当てだけを行う。
  */
 data class WidgetContent(
-    val timeLabel: String,
-    val timeValue: String,
-    val amountLabel: String,
-    val amountValue: String,
+    /** 上段 1 項目目。全プラン共通の「通話時間」 */
+    val timeLine: WidgetLine,
+    /** 上段 2 項目目。月間定額型の「無料枠」（残り）のみ。他プランは null で行ごと非表示にする */
+    val quotaLine: WidgetLine?,
+    /** 下段の「通話金額」 */
+    val amountLine: WidgetLine,
     val color: WidgetColor
 )
 
@@ -24,11 +34,17 @@ data class WidgetContent(
 fun formatMinutes(sec: Int): String = String.format(Locale.JAPAN, "%.1f", sec / 60.0)
 
 /**
+ * spec: docs/spec.md 5.5.1 金額は 3 桁区切り。
+ * 1x1 の狭い幅でも桁数を読み取れるようにするため。アプリ本体（5.6.1）とも共用する。
+ */
+fun formatAmount(amount: Int): String = String.format(Locale.JAPAN, "%,d", amount)
+
+/**
  * spec: docs/spec.md 5.5.1 / 5.5.3 の表示テンプレート・配色判定。
  * 通話時間は全プランとも、通話金額の計算根拠と一致させるため切り上げ後の課金枠の
  * 消費量（quotaConsumedSec、5.4.4）を使う。実通話時間はアプリ本体の「履歴集計」で確認する。
  * calculate() の結果 (Result) と Settings / PlanType のみから決まる純粋関数。
- * 表示項目はアプリ本体の「現在の状況」（5.6.1）と揃える。
+ * 表示する数字はアプリ本体の「現在の状況」（5.6.1）と揃える。
  */
 fun presentWidget(
     result: Result,
@@ -36,7 +52,10 @@ fun presentWidget(
     planType: PlanType,
     warnRemainingSec: Int
 ): WidgetContent {
-    val amountValue = "${result.amount}円"
+    val amountLine = WidgetLine(label = "通話金額", value = formatAmount(result.amount), unit = "円")
+    val timeLine = WidgetLine(
+        label = "通話時間", value = formatMinutes(result.quotaConsumedSec), unit = "分"
+    )
 
     return when (planType) {
         PlanType.MONTHLY -> {
@@ -56,32 +75,31 @@ fun presentWidget(
                 else -> WidgetColor.NORMAL
             }
             WidgetContent(
-                timeLabel = "通話時間 / 無料枠残",
-                timeValue = "${formatMinutes(result.quotaConsumedSec)} / ${formatMinutes(remainingSec)}分",
-                amountLabel = "通話金額",
-                amountValue = amountValue,
+                timeLine = timeLine,
+                quotaLine = WidgetLine(label = "無料枠", value = formatMinutes(remainingSec), unit = "分"),
+                amountLine = amountLine,
                 color = color
             )
         }
         // 1 通話定額型: 月間の定額枠が無いため使用率が定義できない。
         // 課金額 0 円かどうかで色を切り替える（超過色は使わない）
         PlanType.PER_CALL -> WidgetContent(
-            timeLabel = "通話時間",
-            timeValue = "${formatMinutes(result.quotaConsumedSec)}分",
-            amountLabel = "通話金額",
-            amountValue = amountValue,
+            timeLine = timeLine,
+            // 月間の無料枠が無いプラン形式では「無料枠」の項目自体を出さない
+            quotaLine = null,
+            amountLine = amountLine,
             color = if (result.amount == 0) WidgetColor.NORMAL else WidgetColor.WARNING
         )
         // 従量課金: 無料枠が無く「超過」という概念自体が無いため、金額が出ていても常に通常色
         PlanType.PAY_AS_YOU_GO -> WidgetContent(
-            timeLabel = "通話時間",
-            timeValue = "${formatMinutes(result.quotaConsumedSec)}分",
-            amountLabel = "通話金額",
-            amountValue = amountValue,
+            timeLine = timeLine,
+            quotaLine = null,
+            amountLine = amountLine,
             color = WidgetColor.NORMAL
         )
     }
 }
+
 
 /**
  * spec: docs/spec.md 5.5.3 ウィジェット背景の透過率。

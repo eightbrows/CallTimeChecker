@@ -75,6 +75,7 @@ import io.github.eightbrows.CallTimeChecker.logic.Result
 import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
+import io.github.eightbrows.CallTimeChecker.logic.formatAmount
 import io.github.eightbrows.CallTimeChecker.logic.formatMinutes
 import io.github.eightbrows.CallTimeChecker.logic.periodMonth
 import io.github.eightbrows.CallTimeChecker.logic.periodOf
@@ -530,7 +531,8 @@ private fun SummarySection(
             PlanType.PER_CALL -> Text("1通話無料枠: ${settings.perCallFreeSec / 60}分")
             PlanType.PAY_AS_YOU_GO -> Unit
         }
-        Text("単価: ${settings.unitSec}秒 / ${settings.unitPrice}円")
+        // 「11円 / 30秒」の順。何円かが先に来るほうが料金として読みやすいため（5.6.1）
+        Text("単価: ${formatAmount(settings.unitPrice)}円 / ${settings.unitSec}秒")
 
         SectionDivider()
         Text("現在の状況", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -561,7 +563,7 @@ private fun SummarySection(
             )
         }
         Spacer(Modifier.height(12.dp))
-        StatusItem(label = "通話金額", value = "${result.amount}円", over = null)
+        StatusItem(label = "通話金額", value = "${formatAmount(result.amount)}円", over = null)
 
         SectionDivider()
         HistorySummary(result)
@@ -645,7 +647,7 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
     val judgement = when {
         detail.excluded -> "除外"
         record.durationSec == 0 -> "未応答"
-        detail.billedSec > 0 -> "課金 ¥${detail.billedSec / settings.unitSec * settings.unitPrice}"
+        detail.billedSec > 0 -> "課金 ¥${formatAmount(detail.billedSec / settings.unitSec * settings.unitPrice)}"
         else -> "定額内"
     }
     val judgementText = if (detail.quotaConsumedSec > 0) {

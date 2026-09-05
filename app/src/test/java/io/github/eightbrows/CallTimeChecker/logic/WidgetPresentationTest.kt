@@ -63,10 +63,9 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 70 * 60),
             PlanType.MONTHLY
         )
-        assertEquals("通話時間 / 無料枠残", content.timeLabel)
-        assertEquals("42.0 / 28.0分", content.timeValue)
-        assertEquals("通話金額", content.amountLabel)
-        assertEquals("0円", content.amountValue)
+        assertEquals(WidgetLine("通話時間", "42.0", "分"), content.timeLine)
+        assertEquals(WidgetLine("無料枠", "28.0", "分"), content.quotaLine)
+        assertEquals(WidgetLine("通話金額", "0", "円"), content.amountLine)
     }
 
     @Test
@@ -76,8 +75,44 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 70 * 60),
             PlanType.MONTHLY
         )
-        assertEquals("78.0 / 0.0分", content.timeValue)
-        assertEquals("352円", content.amountValue)
+        assertEquals("78.0", content.timeLine.value)
+        assertEquals("0.0", content.quotaLine?.value)
+        assertEquals("352", content.amountLine.value)
+    }
+
+    // --- レイアウト（5.5.1 上段 3/5・下段 2/5）が前提にしている項目の構造 ---
+
+    @Test
+    fun `every item keeps label, number and unit apart so the unit can be drawn smaller`() {
+        val content = presentWidget(
+            result(countedSec = 42 * 60, amount = 220), settings(70 * 60), PlanType.MONTHLY
+        )
+        for (line in listOfNotNull(content.timeLine, content.quotaLine, content.amountLine)) {
+            assertEquals(true, line.label.isNotBlank())
+            assertEquals(true, line.value.isNotBlank())
+        }
+        // 単位は数字と同じ TextView に小さく描くため、数字とは別に持つ
+        assertEquals("分", content.timeLine.unit)
+        assertEquals("分", content.quotaLine?.unit)
+        assertEquals("円", content.amountLine.unit)
+    }
+
+    @Test
+    fun `plans without a monthly quota drop the quota item entirely`() {
+        for (planType in listOf(PlanType.PER_CALL, PlanType.PAY_AS_YOU_GO)) {
+            val content = presentWidget(result(countedSec = 60, amount = 0), settings(0), planType)
+            assertEquals(null, content.quotaLine)
+            assertEquals("通話時間", content.timeLine.label)
+        }
+    }
+
+    @Test
+    fun `amount is grouped in thousands`() {
+        val content = presentWidget(result(countedSec = 60, amount = 1220), settings(0), PlanType.PAY_AS_YOU_GO)
+        assertEquals("1,220", content.amountLine.value)
+        assertEquals("0", formatAmount(0))
+        assertEquals("999", formatAmount(999))
+        assertEquals("1,000,000", formatAmount(1000000))
     }
 
     // --- 月間定額型: 配色境界 (79% / 80% / 99% / 100%) ---
@@ -117,7 +152,8 @@ class WidgetPresentationTest {
         // 5.7 のマイグレーションにより設定画面からは作れない組み合わせ
         val content = presentWidget(result(countedSec = 60, amount = 22), settings(0), PlanType.MONTHLY)
         assertEquals(WidgetColor.NORMAL, content.color)
-        assertEquals("1.0 / 0.0分", content.timeValue)
+        assertEquals("1.0", content.timeLine.value)
+        assertEquals("0.0", content.quotaLine?.value)
     }
 
     // --- 1 通話定額型: テンプレート・配色 ---
@@ -129,10 +165,9 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 300),
             PlanType.PER_CALL
         )
-        assertEquals("通話時間", content.timeLabel)
-        assertEquals("128.0分", content.timeValue)
-        assertEquals("通話金額", content.amountLabel)
-        assertEquals("374円", content.amountValue)
+        assertEquals(WidgetLine("通話時間", "128.0", "分"), content.timeLine)
+        assertEquals(null, content.quotaLine)
+        assertEquals(WidgetLine("通話金額", "374", "円"), content.amountLine)
     }
 
     @Test
@@ -164,9 +199,9 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 0),
             PlanType.PAY_AS_YOU_GO
         )
-        assertEquals("通話時間", content.timeLabel)
-        assertEquals("42.0分", content.timeValue)
-        assertEquals("451円", content.amountValue)
+        assertEquals(WidgetLine("通話時間", "42.0", "分"), content.timeLine)
+        assertEquals(null, content.quotaLine)
+        assertEquals("451", content.amountLine.value)
     }
 
     @Test
@@ -195,7 +230,8 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 70 * 60),
             PlanType.MONTHLY
         )
-        assertEquals("20.0 / 50.0分", content.timeValue)
+        assertEquals("20.0", content.timeLine.value)
+        assertEquals("50.0", content.quotaLine?.value)
     }
 
     @Test
@@ -216,7 +252,7 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 300),
             PlanType.PER_CALL
         )
-        assertEquals("200.0分", content.timeValue)
+        assertEquals("200.0", content.timeLine.value)
     }
 
     @Test
@@ -226,7 +262,7 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 0),
             PlanType.PAY_AS_YOU_GO
         )
-        assertEquals("1.5分", content.timeValue)
+        assertEquals("1.5", content.timeLine.value)
     }
 
     // --- 表示している通話時間が、通話金額の計算根拠と一致すること（5.6.1） ---
@@ -247,8 +283,8 @@ class WidgetPresentationTest {
         assertEquals(calculated.quotaConsumedSec / s.unitSec * s.unitPrice, calculated.amount)
 
         val content = presentWidget(calculated, s, PlanType.PAY_AS_YOU_GO)
-        assertEquals("1.5分", content.timeValue)
-        assertEquals("66円", content.amountValue)
+        assertEquals("1.5", content.timeLine.value)
+        assertEquals("66", content.amountLine.value)
     }
 
     @Test
@@ -266,8 +302,8 @@ class WidgetPresentationTest {
         assertEquals(calculated.quotaConsumedSec / s.unitSec * s.unitPrice, calculated.amount)
 
         val content = presentWidget(calculated, s, PlanType.PER_CALL)
-        assertEquals("4.0分", content.timeValue)
-        assertEquals("176円", content.amountValue)
+        assertEquals("4.0", content.timeLine.value)
+        assertEquals("176", content.amountLine.value)
     }
 
     // --- 背景の透過率（5.5.3 / 5.7） ---

@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- spec: docs/spec.md 5.5 ウィジェット（1x2〜2x2、30分自動更新）。
-     最小サイズは1行（横長）。resizeMode="horizontal|vertical" のため縦に広げて2x2相当でも使える。 -->
+<!-- spec: docs/spec.md 5.5.5 対応サイズ。1x1 を初期配置とし、
+     縦方向のみ 1x2 までリサイズできる（resizeMode="vertical"）。
+     リサイズの下限・上限は minWidth/minHeight ではなく minResizeHeight / maxResizeHeight
+     （API31〜）で決まる。上限は 2 セル分を許して 3 セル分を弾く値だが、1 セルの高さは
+     ランチャーごとに違う（実機の SHARP ランチャーでは 2 セル = 239dp / 3 セル = 365dp）。
+     実機で 1x2 にできることを優先して 260dp とする。セルが低いランチャーでは
+     3 セル以上に伸ばせる余地が残るが、伸びても行間が空くだけで表示は壊れない。 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="110dp"
+    android:minWidth="40dp"
     android:minHeight="40dp"
-    android:targetCellWidth="2"
+    android:minResizeWidth="40dp"
+    android:minResizeHeight="40dp"
+    android:maxResizeHeight="260dp"
+    android:targetCellWidth="1"
     android:targetCellHeight="1"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_call_time"
-    android:resizeMode="horizontal|vertical"
+    android:resizeMode="vertical"
     android:widgetCategory="home_screen"
     android:previewImage="@mipmap/ic_launcher" />

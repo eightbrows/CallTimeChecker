@@ -8,7 +8,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Typeface
 import android.os.SystemClock
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -20,6 +25,7 @@ import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
 import io.github.eightbrows.CallTimeChecker.logic.WidgetColor
+import io.github.eightbrows.CallTimeChecker.logic.WidgetLine
 import io.github.eightbrows.CallTimeChecker.logic.widgetPaletteArgb
 import io.github.eightbrows.CallTimeChecker.logic.widgetTextColorOn
 import io.github.eightbrows.CallTimeChecker.logic.calculate
@@ -44,14 +50,48 @@ const val ACTION_SETTINGS_CHANGED = "io.github.eightbrows.CallTimeChecker.widget
 private const val MIN_UPDATING_DISPLAY_MILLIS = 500L
 private val EXECUTOR = Executors.newSingleThreadExecutor()
 
-/** NORMAL状態で色を切り替える対象（2ブロック×ラベル/値）のビューID一覧 */
+/** NORMAL状態で色を切り替える対象（上段の最大2行 + 下段1行）のビューID一覧 */
 private val NORMAL_STATE_TEXT_VIEW_IDS = listOf(
-    R.id.widget_time_label, R.id.widget_time_value,
-    R.id.widget_amount_label, R.id.widget_amount_value
+    R.id.widget_line_time, R.id.widget_line_quota, R.id.widget_line_amount
 )
 
-/** 通常表示（通話時間 / 通話金額）のブロックコンテナのビューID一覧 */
-private val CONTENT_ROW_IDS = listOf(R.id.widget_time_block, R.id.widget_amount_block)
+/** 通常表示（上段 / 区切り線 / 下段）のビューID一覧 */
+private val CONTENT_ROW_IDS = listOf(R.id.widget_top, R.id.widget_divider, R.id.widget_line_amount)
+
+/** 区切り線の濃さ。文字色をそのまま使うと線が主張しすぎるため薄くする */
+private const val WIDGET_DIVIDER_ALPHA = 0x66
+
+/**
+ * spec: docs/spec.md 5.5.1 ラベル・単位の文字サイズ。
+ * 数字に対する比率で指定する。行全体を 1 つの TextView にして autoSize させているので、
+ * この比率はリサイズしても保たれる（autoSize は行全体を一様に拡大縮小するため）。
+ * ラベル・数字・単位を別々の TextView にすると autoSize が行ごとに独立して働き、
+ * 縦に伸ばしたときに数字だけが不釣り合いに大きくなる。
+ */
+private const val WIDGET_LABEL_SCALE = 0.45f
+
+/**
+ * spec: docs/spec.md 5.5.1 「ラベル（小）」の下に「数字（大）+ 単位（小）」を置く 1 項目。
+ * 2 行だが 1 つの CharSequence にまとめ、大きさ・太さの差はスパンで付ける。
+ * autoSize は複数行のテキスト全体を一様に拡大縮小するため、改行を挟んでも比率は保たれる。
+ * RelativeSizeSpan / StyleSpan はいずれも ParcelableSpan なので RemoteViews 越しに保持される。
+ */
+private fun widgetLineText(line: WidgetLine): CharSequence {
+    val sb = SpannableStringBuilder()
+    // ラベルは数字の上の行に出す。改行もラベル側のスパンに含めるので、行送りも小さい方に付く
+    if (line.label.isNotEmpty()) appendSmall(sb, line.label + "\n")
+    val valueStart = sb.length
+    sb.append(line.value)
+    sb.setSpan(StyleSpan(Typeface.BOLD), valueStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    if (line.unit.isNotEmpty()) appendSmall(sb, line.unit)
+    return sb
+}
+
+private fun appendSmall(sb: SpannableStringBuilder, text: String) {
+    val start = sb.length
+    sb.append(text)
+    sb.setSpan(RelativeSizeSpan(WIDGET_LABEL_SCALE), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+}
 
 /**
  * spec: docs/spec.md 7.2 設定変更時のトリガー。SettingsRepository.save() 完了時に呼び出す想定。
@@ -170,12 +210,20 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.widget_call_time)
             restoreNormalLayout(views)
 
-            // spec 5.5.1: ラベルも値もプラン形式で変わるため、文字列は presentWidget() が組み立てる。
-            // ここではビューへの割り当てだけを行う
-            views.setTextViewText(R.id.widget_time_label, content.timeLabel)
-            views.setTextViewText(R.id.widget_time_value, content.timeValue)
-            views.setTextViewText(R.id.widget_amount_label, content.amountLabel)
-            views.setTextViewText(R.id.widget_amount_value, content.amountValue)
+            // spec 5.5.1: ラベルも数字もプラン形式で変わるため、文字列は presentWidget() が組み立てる。
+            // ここではスパンを付けてビューへ割り当てるだけ
+            views.setTextViewText(R.id.widget_line_time, widgetLineText(content.timeLine))
+            views.setTextViewText(R.id.widget_line_amount, widgetLineText(content.amountLine))
+
+            // 月間の無料枠が無いプラン形式では行ごと GONE にする。
+            // GONE の行は weight を消費しないので、残る通話時間の行が上段いっぱいに広がる
+            val quota = content.quotaLine
+            views.setViewVisibility(
+                R.id.widget_line_quota, if (quota == null) View.GONE else View.VISIBLE
+            )
+            if (quota != null) {
+                views.setTextViewText(R.id.widget_line_quota, widgetLineText(quota))
+            }
 
             val bgArgb = backgroundArgb(appSettings, content.color)
             applyBackground(views, bgArgb, appSettings.widgetBgTransparencyStep)
@@ -183,6 +231,9 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             for (id in NORMAL_STATE_TEXT_VIEW_IDS) {
                 views.setTextColor(id, textColor)
             }
+            views.setInt(
+                R.id.widget_divider, "setBackgroundColor", withAlpha(textColor, WIDGET_DIVIDER_ALPHA)
+            )
             views.setOnClickPendingIntent(R.id.widget_root, manualRefreshPendingIntent(context))
             return views
         } finally {
@@ -235,11 +286,9 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         for (id in CONTENT_ROW_IDS) {
             views.setViewVisibility(id, View.VISIBLE)
         }
-        // 旧バージョンではラベル・値を個別に GONE にしていたため、そのまま更新された
-        // 既存ウィジェットのために個別の VISIBLE 復帰も明示しておく
-        for (id in NORMAL_STATE_TEXT_VIEW_IDS) {
-            views.setViewVisibility(id, View.VISIBLE)
-        }
+        // 無料枠の行はプラン形式によって変わるため、ここではなく
+        // buildNormalViews() 側で毎回 VISIBLE / GONE を明示する
+        views.setViewVisibility(R.id.widget_line_time, View.VISIBLE)
         views.setViewVisibility(R.id.widget_status, View.GONE)
     }
 

@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- spec: docs/spec.md 5.5.1 表示内容。「ラベル(小) + 値(大)」のブロックを2つ縦に並べる。
-     アプリ本体の「現在の状況」(5.6.1)と同じ構成にして、両者で見え方を揃えている。
-     文字列の組み立ては WidgetPresentation.presentWidget() 側で行う。
-     文字サイズはラベル11sp / 値18sp。以前の4行構成では17spが1x2最小サイズの上限だったが、
-     ラベルが小さくなった分の余裕を値に回している。
-     値は桁数が増えた場合（例: "20.5 / 1419.5分"）に切れないよう autoSize で 12sp まで自動縮小する。
-     ラベルも「通話時間 / 無料枠残」が 11 文字と長いため 9sp まで縮小できるようにしている。
+<!-- spec: docs/spec.md 5.5.1 表示内容。ウィジェットを縦に 上段 3 : 下段 2 で分割し、
+     間に区切り線を入れる。上段は「通話時間」（月間定額型はさらに「無料枠」）、
+     下段は「通話金額」。全体を中央寄せにする。
+     1 項目 = 「ラベル（小）+ 数字（大）+ 単位（小）」を 1 つの TextView にまとめ、
+     大きさの差は RelativeSizeSpan で付ける（CallTimeWidgetProvider）。
+     ラベル・数字・単位を別々の TextView にすると、autoSize が行ごとに独立して働くため
+     リサイズしたときにラベルと数字の比率が崩れる。1 ビューにまとめれば autoSize は
+     行全体を一様に拡大縮小するので、どのサイズでも比率が保たれる。
+     autoSize は幅と高さの両方が確定している TextView でしか働かないため、
+     高さは layout_weight、幅は match_parent で決める。
+     超過の有無はテキストではなく背景色（5.5.3）だけで表す。
      背景色は透過率（5.7）を反映した ARGB を実行時に setBackgroundColor で設定するため、
      ここでの background 指定はウィジェット選択画面のプレビューと初期表示用。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -13,98 +17,99 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center_vertical"
+    android:gravity="center"
     android:background="@color/widget_bg_normal"
-    android:paddingHorizontal="8dp"
+    android:paddingHorizontal="6dp"
     android:paddingVertical="2dp">
 
-    <!-- ブロック1: 通話時間（月間定額型は「通話時間 / 無料枠残」） -->
+    <!-- 上段 3/5: 通話時間（月間定額型はさらに無料枠） -->
     <LinearLayout
-        android:id="@+id/widget_time_block"
+        android:id="@+id/widget_top"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/widget_time_label"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="9sp"
-            android:autoSizeMaxTextSize="11sp"
-            android:autoSizeStepGranularity="1sp"
-            android:textColor="@color/widget_text_normal" />
-
-        <TextView
-            android:id="@+id/widget_time_value"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="12sp"
-            android:autoSizeMaxTextSize="18sp"
-            android:autoSizeStepGranularity="1sp"
-            android:textColor="@color/widget_text_normal" />
-
-    </LinearLayout>
-
-    <!-- ブロック2: 通話金額 -->
-    <LinearLayout
-        android:id="@+id/widget_amount_block"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="3"
         android:orientation="vertical"
-        android:layout_marginTop="4dp">
+        android:gravity="center">
 
         <TextView
-            android:id="@+id/widget_amount_label"
+            android:id="@+id/widget_line_time"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:maxLines="1"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:maxLines="2"
             android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:textSize="22sp"
             android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="9sp"
-            android:autoSizeMaxTextSize="11sp"
+            android:autoSizeMinTextSize="6sp"
+            android:autoSizeMaxTextSize="48sp"
             android:autoSizeStepGranularity="1sp"
             android:textColor="@color/widget_text_normal" />
 
         <TextView
-            android:id="@+id/widget_amount_value"
+            android:id="@+id/widget_line_quota"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:maxLines="1"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:maxLines="2"
             android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:textSize="22sp"
             android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="12sp"
-            android:autoSizeMaxTextSize="18sp"
+            android:autoSizeMinTextSize="6sp"
+            android:autoSizeMaxTextSize="48sp"
             android:autoSizeStepGranularity="1sp"
             android:textColor="@color/widget_text_normal" />
 
     </LinearLayout>
+
+    <!-- 上段と下段の区切り線。色は背景色から決まる文字色を薄めたものを実行時に設定する。
+         素の View は RemoteViews で許可されたビュー（@RemoteView 付きのクラス）ではないため
+         ImageView を使う。 -->
+    <ImageView
+        android:id="@+id/widget_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginVertical="2dp"
+        android:contentDescription="@null"
+        android:background="@color/widget_text_normal" />
+
+    <!-- 下段 2/5: 通話金額 -->
+    <TextView
+        android:id="@+id/widget_line_amount"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="2"
+        android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:includeFontPadding="false"
+        android:textSize="22sp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="6sp"
+        android:autoSizeMaxTextSize="48sp"
+        android:autoSizeStepGranularity="1sp"
+        android:textColor="@color/widget_text_normal" />
 
     <!-- 状態表示（権限要求 / 更新中 / 更新失敗）。
-         上の2ブロックはラベル+値の構成のため、値欄を流用するとメッセージの位置が揃わない。
-         そのため状態表示は専用の1ビューを用意し、他のブロックを全て GONE にして上下左右中央に出す。
-         2行メッセージは改行を含む1つの文字列として設定する。 -->
+         通常表示はラベル + 数字 + 単位の組なので、そこにメッセージを流し込むと文字比率が合わない。
+         専用の 1 ビューを用意し、上下段と区切り線を GONE にして上下左右中央に出す。
+         2 行メッセージは改行を含む 1 つの文字列として設定する。 -->
     <TextView
         android:id="@+id/widget_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
         android:gravity="center"
-        android:textSize="15sp"
-        android:maxLines="2"
+        android:maxLines="3"
         android:ellipsize="end"
         android:visibility="gone"
+        android:textSize="15sp"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="7sp"
+        android:autoSizeMaxTextSize="15sp"
+        android:autoSizeStepGranularity="1sp"
         android:textColor="@color/widget_text_normal" />
 
 </LinearLayout>

@@ -692,6 +692,27 @@ onUpdate / onReceive(ACTION_MANUAL_REFRESH)
 | 4 | 設定画面 | それまでは定数で仮置き |
 | 5 | GitHub Actions による CI、APK 署名、リリース | |
 
+### 11.1 リリースビルド
+
+タグ `YYYYMMDD-Rnn` の push で `.github/workflows/release.yml` が `assembleRelease` を実行し、GitHub Release に APK を添付する。
+
+**署名**: キーストアは `KEYSTORE_PATH` / `KEY_STORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` の 4 つの環境変数で渡す（workflow がシークレットから設定する）。環境変数が無いローカルビルドでは署名なし（未署名 APK）になる。一部だけ設定されている状態はシークレットの設定漏れなのでビルドを失敗させる。未署名の APK は端末にインストールできず、しかも黙ってリリースに載ってしまうため。workflow 側も `app-release.apk`（署名済みビルドの成果物名）を決め打ちで探し、無ければ失敗する。
+
+**縮小・難読化**: `optimization.enable = true`（R8）と `isShrinkResources = true` を有効にする。AGP 9 のテンプレートが生成する既定値は `enable = false` だが、これは意図的な判断ではなくテンプレートのまま残っていたもの。
+
+有効化して問題ない根拠は次のとおり。追加の keep ルールは不要（`src/main/keepRules/` は作っていない）。
+
+| R8 で壊れやすい要素 | このアプリでの状況 |
+|---|---|
+| リフレクション | `RemoteViews.setInt(id, "setBackgroundColor" / "setGravity", ...)` のみ。対象は framework のメソッドで R8 の対象外 |
+| クラス名の文字列参照 | 無し（`Class.forName` / `getDeclaredMethod` を使っていない）。`::class.java` は `Intent` / `ComponentName` の引数で、R8 が参照を追える |
+| マニフェスト登録クラス | `MainActivity` / `CallTimeWidgetProvider` は AAPT 生成の keep ルールで保持される |
+| シリアライズ | 無し（`kotlinx.serialization` / Gson / `Parcelable` の実装なし） |
+| enum の文字列復元 | 無し。`plan_type` は書き込むだけで、読み出し時は `derivePlanType()` が定額枠の分数から導出する（5.7） |
+| リソース参照 | すべてマニフェストか `R.xxx` 経由。ウィジェットも `AndroidManifest.xml` → `/call_time_widget_info` → `/widget_call_time` と静的に追える |
+
+結果、APK は 7.94 MB → 1.64 MB（79.4% 減）。未使用と判定されて削除される `widget_bg_warning` / `widget_bg_over` / `widget_text_on_color` は、配色がパレット（`WIDGET_COLOR_PALETTE`、5.7）と `widgetTextColorOn()` に移った時点で参照が無くなった色リソースで、削除されて問題ない。
+
 ---
 
 ## 12. 未決事項

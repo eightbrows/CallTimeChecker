@@ -135,9 +135,15 @@ android {
         release {
             // 環境変数が無いローカルビルドでは null のまま（＝未署名）
             signingConfig = signingConfigs.findByName("release")
+            // R8 によるコード縮小・難読化。テンプレートの既定は false だが、
+            // リフレクションで参照しているのは framework のメソッド（RemoteViews.setInt の
+            // "setBackgroundColor" / "setGravity"）だけで、アプリ自身のクラスを名前で引く箇所が
+            // 無いため有効化できる。判断の根拠は docs/spec.md 11.1。
             optimization {
-                enable = false
+                enable = true
             }
+            // 未使用リソースの削除。参照はすべてマニフェストか R.xxx 経由なので静的に追える
+            isShrinkResources = true
         }
     }
     compileOptions {

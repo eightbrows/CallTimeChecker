@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +34,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +60,7 @@ import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
 import io.github.eightbrows.CallTimeChecker.logic.WIDGET_BG_TRANSPARENCY_STEP_COUNT
 import io.github.eightbrows.CallTimeChecker.logic.WIDGET_COLOR_PALETTE
+import io.github.eightbrows.CallTimeChecker.logic.WidgetPaletteColor
 import io.github.eightbrows.CallTimeChecker.logic.clampWarnRemainingMin
 import io.github.eightbrows.CallTimeChecker.logic.clampWidgetColorIndex
 import io.github.eightbrows.CallTimeChecker.logic.defaultWarnRemainingMin
@@ -273,9 +276,6 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(8.dp))
 
-            WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
-            Spacer(Modifier.height(8.dp))
-
             WidgetColorSection(
                 normalIndex = colorNormalIndex,
                 warningIndex = colorWarningIndex,
@@ -284,6 +284,9 @@ fun SettingsScreen(
                 onWarningChange = { colorWarningIndex = it },
                 onOverChange = { colorOverIndex = it }
             )
+            Spacer(Modifier.height(8.dp))
+
+            WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
             Spacer(Modifier.height(16.dp))
 
             HorizontalDivider()
@@ -437,65 +440,46 @@ private fun WarnRemainingSection(
     val canIncrease = range != null && current != null && current < range.last
     val enabled = range != null
 
-    // 項目名・エラー・注記は行の外に出す。他の数値欄と同じく枠内ラベルと supportingText に
-    // すると、+/- ボタンで狭くなった欄の中で 2 行に折り返してしまうため
-    Text("警告しきい値（残り分）", style = MaterialTheme.typography.bodySmall)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        StepperButton("−", enabled = canDecrease) {
+    // 入力欄そのものは定額枠などと同じ NumberField（枠内ラベル + supportingText）にし、
+    // +/- ボタンだけを枠の外の右に置く。ボタンの上下中央を入力欄（56dp）の中央に合わせるため
+    // 上に 4dp 空ける（Row 全体を中央揃えにすると supportingText の分だけ上にずれる）
+    Row(verticalAlignment = Alignment.Top) {
+        NumberField(
+            value = value,
+            onValueChange = onValueChange,
+            label = "定額枠残警告（残り分）",
+            error = error,
+            enabled = enabled,
+            disabledNote = if (planType == PlanType.MONTHLY) {
+                "定額枠が1分のため警告色は使用しない"
+            } else {
+                "${planTypeLabel(planType)}では使用しない"
+            },
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        StepperButton("−", enabled = canDecrease, modifier = Modifier.padding(top = 4.dp)) {
             if (current != null) onValueChange((current - 1).toString())
         }
         Spacer(Modifier.width(8.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = { onValueChange(it.filter(Char::isDigit)) },
-            enabled = enabled,
-            isError = error != null,
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.width(110.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        StepperButton("+", enabled = canIncrease) {
+        StepperButton("+", enabled = canIncrease, modifier = Modifier.padding(top = 4.dp)) {
             if (current != null) onValueChange((current + 1).toString())
         }
-        Spacer(Modifier.width(12.dp))
-        if (enabled && current != null) {
-            Text(
-                // 入力値そのものの言い換え。単位（残り時間であること）を取り違えないようにする
-                warnRemainingLabel(current),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-    val note = when {
-        error != null -> error
-        enabled -> null
-        planType == PlanType.MONTHLY -> "定額枠が1分のため警告色は使用しない"
-        else -> "${planTypeLabel(planType)}では使用しない"
-    }
-    if (note != null) {
-        Text(
-            note,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (error != null) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-        )
     }
 }
 
 /** +/- ボタン。タップターゲットの推奨最小 48dp を確保する */
 @Composable
-private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+private fun StepperButton(
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     FilledTonalIconButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.size(48.dp)
+        modifier = modifier.size(48.dp)
     ) {
         Text(label, style = MaterialTheme.typography.titleLarge)
     }
@@ -516,57 +500,165 @@ private fun WidgetColorSection(
     onWarningChange: (Int) -> Unit,
     onOverChange: (Int) -> Unit
 ) {
+    // 開いているダイアログの役割。null なら閉じている
+    var editing by remember { mutableStateOf<WidgetColorRole?>(null) }
+    val selectedIndex = { role: WidgetColorRole ->
+        when (role) {
+            WidgetColorRole.NORMAL -> normalIndex
+            WidgetColorRole.WARNING -> warningIndex
+            WidgetColorRole.OVER -> overIndex
+        }
+    }
+
     Text("ウィジェット背景色", style = MaterialTheme.typography.titleMedium)
-    WidgetColorRow("通常色", normalIndex, onNormalChange)
-    WidgetColorRow("警告色", warningIndex, onWarningChange)
-    WidgetColorRow("超過色", overIndex, onOverChange)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        WidgetColorRole.entries.forEachIndexed { position, role ->
+            if (position > 0) {
+                Text(
+                    "→",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 6.dp)
+                )
+            }
+            WidgetColorChip(role.label, selectedIndex(role)) { editing = role }
+        }
+    }
     Text(
-        "文字色は背景色の明るさから自動で決まる。透過率は3色共通",
+        "使用量が増えるとこの順に切り替わる。文字色は背景色の明るさから自動で決まる。透過率は3色共通",
         style = MaterialTheme.typography.bodySmall
     )
+
+    val role = editing
+    if (role != null) {
+        WidgetColorPickerDialog(
+            role = role,
+            selectedIndex = selectedIndex(role),
+            onSelect = { index ->
+                when (role) {
+                    WidgetColorRole.NORMAL -> onNormalChange(index)
+                    WidgetColorRole.WARNING -> onWarningChange(index)
+                    WidgetColorRole.OVER -> onOverChange(index)
+                }
+                // 選んだら閉じる。3 色を順に変えるときに毎回「閉じる」を押させない
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
+}
+
+/** spec: docs/spec.md 5.5.3 背景色の 3 役割。宣言順が使用量の増える順（切り替わる順）になる */
+private enum class WidgetColorRole(val label: String) {
+    NORMAL("通常色"),
+    WARNING("警告色"),
+    OVER("超過色")
 }
 
 /**
- * 1 つの役割ぶんの色見本。8 色を等幅で並べるため個々の幅は weight に任せる
- * （固定幅にすると画面幅の狭い端末で溢れる）。選択中は枠とチェックで示す。
+ * 1 役割ぶんの現在の色。役割名と色見本を並べ、タップでパレットのダイアログを開く。
+ * 8 色を 3 行ぶん並べるのをやめてこの形にしたのは、設定画面の縦幅を大きく取るわりに
+ * 「今どの色か」が読み取りにくかったため。
  */
 @Composable
-private fun WidgetColorRow(label: String, selectedIndex: Int, onSelect: (Int) -> Unit) {
-    Text(label, style = MaterialTheme.typography.bodySmall)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        WIDGET_COLOR_PALETTE.forEachIndexed { index, palette ->
-            val selected = index == selectedIndex
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .background(Color(palette.argb), RoundedCornerShape(4.dp))
-                    .border(
-                        width = if (selected) 3.dp else 1.dp,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        shape = RoundedCornerShape(4.dp)
-                    )
-                    .clickable { onSelect(index) }
-            ) {
-                // 枠だけでは選択中が分かりにくいため、色見本の上にチェックを重ねる。
-                // 見本の色に対して読める文字色はウィジェット本体と同じ規則で決める
-                if (selected) {
-                    Text(
-                        "✓",
-                        color = Color(widgetTextColorOn(palette.argb)),
-                        style = MaterialTheme.typography.titleMedium
-                    )
+private fun WidgetColorChip(label: String, selectedIndex: Int, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(
+                    Color(WIDGET_COLOR_PALETTE[selectedIndex].argb),
+                    RoundedCornerShape(4.dp)
+                )
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                .clickable { onClick() }
+        )
+    }
+}
+
+/**
+ * spec: docs/spec.md 5.7 背景色のパレット。8 色を 4 列 2 行で出す。
+ * 選択中は枠とチェックで示し、選ぶと即座に閉じる。
+ */
+@Composable
+private fun WidgetColorPickerDialog(
+    role: WidgetColorRole,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${role.label}を選ぶ") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                WIDGET_COLOR_PALETTE.chunked(4).forEachIndexed { row, colors ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        colors.forEachIndexed { column, palette ->
+                            val index = row * 4 + column
+                            WidgetColorSwatch(
+                                palette = palette,
+                                selected = index == selectedIndex,
+                                modifier = Modifier.weight(1f)
+                            ) { onSelect(index) }
+                        }
+                    }
                 }
             }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("キャンセル") }
         }
+    )
+}
+
+/** パレット 1 色ぶんの見本。色名を添えて、色覚に頼らずに選べるようにする */
+@Composable
+private fun WidgetColorSwatch(
+    palette: WidgetPaletteColor,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier.clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(Color(palette.argb), RoundedCornerShape(4.dp))
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant
+                    },
+                    shape = RoundedCornerShape(4.dp)
+                )
+        ) {
+            // 見本の色に対して読める文字色はウィジェット本体と同じ規則で決める
+            if (selected) {
+                Text(
+                    "✓",
+                    color = Color(widgetTextColorOn(palette.argb)),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
+        Text(
+            palette.label,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

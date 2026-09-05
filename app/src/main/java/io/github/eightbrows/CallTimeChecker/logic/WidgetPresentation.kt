@@ -105,12 +105,14 @@ data class WidgetPaletteColor(val label: String, val argb: Int)
 /**
  * spec: docs/spec.md 5.5.3 / 5.7 ウィジェット背景色のプリセットパレット。
  * 保存するのは ARGB ではなくこのリストの添字。色の実体をここ 1 箇所に閉じ込めるため。
- * 並び順が保存値の意味そのものになるので、既存の色の順番は変えない（末尾への追加のみ可）。
+ * 並び順が保存値の意味そのものになるので、色を入れ替えるときは位置を保つ。
+ * ライトグレー / ダークグレーをピンク / パープルに差し替えた際も、他の色の添字が
+ * ずれないよう同じ位置に置いた（削除した 2 色を指していた保存値だけが別の色になる）。
  */
 val WIDGET_COLOR_PALETTE = listOf(
     WidgetPaletteColor("ホワイト", 0xFFFFFFFF.toInt()),
-    WidgetPaletteColor("ライトグレー", 0xFFE0E0E0.toInt()),
-    WidgetPaletteColor("ダークグレー", 0xFF424242.toInt()),
+    WidgetPaletteColor("ピンク", 0xFFE91E63.toInt()),
+    WidgetPaletteColor("パープル", 0xFF7B1FA2.toInt()),
     WidgetPaletteColor("ブルー", 0xFF1976D2.toInt()),
     WidgetPaletteColor("グリーン", 0xFF388E3C.toInt()),
     WidgetPaletteColor("イエロー", 0xFFFBC02D.toInt()),

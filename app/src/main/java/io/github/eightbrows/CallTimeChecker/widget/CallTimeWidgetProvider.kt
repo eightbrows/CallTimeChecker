@@ -8,10 +8,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Typeface
 import android.os.SystemClock
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.util.Log
@@ -77,15 +79,70 @@ private const val WIDGET_LABEL_SCALE = 0.45f
  * RelativeSizeSpan / StyleSpan はいずれも ParcelableSpan なので RemoteViews 越しに保持される。
  */
 private fun widgetLineText(line: WidgetLine): CharSequence {
+    // spec 5.5.1: 基準文字列に足りない桁数を数え、数字の前後に同じ幅ずつ埋める。
+    // 桁埋めに空白文字ではなく数字を使うのは、行末の空白が描画時に切り詰められるのと、
+    // 数字なら基準文字列と同じ字形なので幅が厳密に一致するため
+    val padCount = ((line.reference?.length ?: 0) - line.value.length).coerceAtLeast(0)
+
     val sb = SpannableStringBuilder()
     // ラベルは数字の上の行に出す。改行もラベル側のスパンに含めるので、行送りも小さい方に付く
     if (line.label.isNotEmpty()) appendSmall(sb, line.label + "\n")
-    val valueStart = sb.length
+
+    val leadPadStart = sb.length
+    appendHalfPad(sb, padCount)
+    val leadPadEnd = sb.length
     sb.append(line.value)
-    sb.setSpan(StyleSpan(Typeface.BOLD), valueStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    val valueEnd = sb.length
     if (line.unit.isNotEmpty()) appendSmall(sb, line.unit)
+    val trailPadStart = sb.length
+    appendHalfPad(sb, padCount)
+
+    // 桁埋めは数字と同じ大きさ・太さでないと基準文字列と幅がそろわないため、
+    // 単位（小）を挟んだ後ろ側も含めて数字と同じ扱いにする
+    sb.setSpan(StyleSpan(Typeface.BOLD), leadPadStart, valueEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    // 幅だけ確保して見せないので透明にする
+    if (leadPadEnd > leadPadStart) {
+        markPad(sb, leadPadStart, leadPadEnd)
+        markPad(sb, trailPadStart, sb.length)
+        sb.setSpan(StyleSpan(Typeface.BOLD), trailPadStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
     return sb
 }
+
+/**
+ * 読み上げ用の文字列。widgetLineText() の桁埋めは見た目のためだけのものなので、
+ * そのまま読み上げられないよう contentDescription には埋めていない文字列を渡す。
+ */
+private fun widgetLineDescription(line: WidgetLine): String =
+    if (line.label.isEmpty()) line.value + line.unit else "${line.label} ${line.value}${line.unit}"
+
+/**
+ * spec: docs/spec.md 5.5.1 片側ぶんの桁埋め（= 不足桁数の半分の幅）を追加する。
+ * 同じものを数字の前後に付けるので、埋めた結果は必ず左右対称になり中央寄せが崩れない。
+ * 不足が奇数桁のときは 1 桁を半分の大きさにして両側に置き、合わせて 1 桁ぶんにする
+ * （片側にまるごと寄せると、見えている文字が半桁ぶん中心からずれる）。
+ * 半分より大きい倍率は使わないので、桁埋めが行の高さを押し広げることもない。
+ */
+private fun appendHalfPad(sb: SpannableStringBuilder, padCount: Int) {
+    repeat(padCount / 2) { sb.append(WIDGET_PAD_DIGIT) }
+    if (padCount % 2 == 1) {
+        val start = sb.length
+        sb.append(WIDGET_PAD_DIGIT)
+        sb.setSpan(
+            RelativeSizeSpan(WIDGET_PAD_HALF_SCALE), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+    }
+}
+
+private fun markPad(sb: SpannableStringBuilder, start: Int, end: Int) {
+    sb.setSpan(ForegroundColorSpan(Color.TRANSPARENT), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+}
+
+/** 桁埋めに使う文字。基準文字列と同じ字形になるよう数字を使う（透明にして見せない） */
+private const val WIDGET_PAD_DIGIT = '0'
+
+/** 奇数桁の桁埋めを左右に分けるための倍率 */
+private const val WIDGET_PAD_HALF_SCALE = 0.5f
 
 private fun appendSmall(sb: SpannableStringBuilder, text: String) {
     val start = sb.length
@@ -212,8 +269,8 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
 
             // spec 5.5.1: ラベルも数字もプラン形式で変わるため、文字列は presentWidget() が組み立てる。
             // ここではスパンを付けてビューへ割り当てるだけ
-            views.setTextViewText(R.id.widget_line_time, widgetLineText(content.timeLine))
-            views.setTextViewText(R.id.widget_line_amount, widgetLineText(content.amountLine))
+            applyLine(views, R.id.widget_line_time, content.timeLine)
+            applyLine(views, R.id.widget_line_amount, content.amountLine)
 
             // 月間の無料枠が無いプラン形式では行ごと GONE にする。
             // GONE の行は weight を消費しないので、残る通話時間の行が上段いっぱいに広がる
@@ -222,7 +279,7 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
                 R.id.widget_line_quota, if (quota == null) View.GONE else View.VISIBLE
             )
             if (quota != null) {
-                views.setTextViewText(R.id.widget_line_quota, widgetLineText(quota))
+                applyLine(views, R.id.widget_line_quota, quota)
             }
 
             val bgArgb = backgroundArgb(appSettings, content.color)
@@ -239,6 +296,11 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         } finally {
             dbHelper.close()
         }
+    }
+
+    private fun applyLine(views: RemoteViews, viewId: Int, line: WidgetLine) {
+        views.setTextViewText(viewId, widgetLineText(line))
+        views.setContentDescription(viewId, widgetLineDescription(line))
     }
 
     private fun buildNoPermissionViews(context: Context): RemoteViews {

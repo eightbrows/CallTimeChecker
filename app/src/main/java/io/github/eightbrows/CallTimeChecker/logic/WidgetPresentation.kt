@@ -10,7 +10,31 @@ enum class WidgetColor { NORMAL, WARNING, OVER }
  * 「ラベル（小）+ 数字（大）+ 単位（小）」を 1 つの TextView にまとめ、
  * 大きさの差はスパンで付けて描画するため、大きさの違う 3 つの部品として持つ。
  */
-data class WidgetLine(val label: String, val value: String, val unit: String)
+data class WidgetLine(
+    val label: String,
+    val value: String,
+    val unit: String,
+    /**
+     * spec: docs/spec.md 5.5.1 文字サイズをそろえる基準となる数字部分。
+     * autoSize は行ごとに自分のテキストの幅からサイズを決めるため、これが無いと
+     * 同じ項目でもプラン形式や桁数によって文字の大きさが変わってしまう。
+     * 基準を指定した行は、実際の数字が基準より短ければ基準の幅まで桁を埋めて
+     * 描画し、どの行も同じサイズになる（埋めた桁は透明にして見せない）。
+     * 基準より長い場合は埋めないので、その行だけ autoSize が縮小する。
+     * null は基準無し（その行だけの autoSize に任せる）。
+     */
+    val reference: String? = null
+)
+
+/**
+ * spec: docs/spec.md 5.5.1 上段の分表示の基準文字列。2 桁 + 小数第一位。
+ * 月間定額型の「通話時間」「無料枠」どうし、および 1 行構成の 2 プランどうしの
+ * 文字サイズをこれでそろえる。
+ */
+const val WIDGET_TIME_REFERENCE = "00.0"
+
+/** spec: docs/spec.md 5.5.1 「通話金額」の基準文字列。3 プラン共通で 3 桁 */
+const val WIDGET_AMOUNT_REFERENCE = "000"
 
 /**
  * spec: docs/spec.md 5.5.1 ウィジェット表示内容。
@@ -52,10 +76,13 @@ fun presentWidget(
     planType: PlanType,
     warnRemainingSec: Int
 ): WidgetContent {
-    val amountLine = WidgetLine(label = "通話金額", value = formatAmount(result.amount), unit = "円")
-    val timeLine = WidgetLine(
-        label = "通話時間", value = formatMinutes(result.quotaConsumedSec), unit = "分"
+    val amountLine = WidgetLine(
+        label = "通話金額",
+        value = formatAmount(result.amount),
+        unit = "円",
+        reference = WIDGET_AMOUNT_REFERENCE
     )
+    val consumedMinutes = formatMinutes(result.quotaConsumedSec)
 
     return when (planType) {
         PlanType.MONTHLY -> {
@@ -75,8 +102,17 @@ fun presentWidget(
                 else -> WidgetColor.NORMAL
             }
             WidgetContent(
-                timeLine = timeLine,
-                quotaLine = WidgetLine(label = "無料枠", value = formatMinutes(remainingSec), unit = "分"),
+                // 上段 2 行も同じ基準でそろえる。行の幅を決めているのはラベルではなく数字行で、
+                // 整数部が 1 桁違うだけで autoSize が選ぶサイズが 2 割以上変わってしまうため
+                // （1x2 の実機で cap 高 37px と 29px）。ラベルは数字行より短いので桁埋め不要
+                timeLine = WidgetLine(
+                    label = "通話時間", value = consumedMinutes, unit = "分",
+                    reference = WIDGET_TIME_REFERENCE
+                ),
+                quotaLine = WidgetLine(
+                    label = "無料枠", value = formatMinutes(remainingSec), unit = "分",
+                    reference = WIDGET_TIME_REFERENCE
+                ),
                 amountLine = amountLine,
                 color = color
             )
@@ -84,7 +120,11 @@ fun presentWidget(
         // 1 通話定額型: 月間の定額枠が無いため使用率が定義できない。
         // 課金額 0 円かどうかで色を切り替える（超過色は使わない）
         PlanType.PER_CALL -> WidgetContent(
-            timeLine = timeLine,
+            // 上段 1 行構成の 2 プランは、同じ位置に同じ項目が出るので幅をそろえる
+            timeLine = WidgetLine(
+                label = "通話時間", value = consumedMinutes, unit = "分",
+                reference = WIDGET_TIME_REFERENCE
+            ),
             // 月間の無料枠が無いプラン形式では「無料枠」の項目自体を出さない
             quotaLine = null,
             amountLine = amountLine,
@@ -92,7 +132,10 @@ fun presentWidget(
         )
         // 従量課金: 無料枠が無く「超過」という概念自体が無いため、金額が出ていても常に通常色
         PlanType.PAY_AS_YOU_GO -> WidgetContent(
-            timeLine = timeLine,
+            timeLine = WidgetLine(
+                label = "通話時間", value = consumedMinutes, unit = "分",
+                reference = WIDGET_TIME_REFERENCE
+            ),
             quotaLine = null,
             amountLine = amountLine,
             color = WidgetColor.NORMAL

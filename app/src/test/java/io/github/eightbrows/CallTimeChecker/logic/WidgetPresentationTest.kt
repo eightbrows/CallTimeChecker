@@ -63,9 +63,9 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 70 * 60),
             PlanType.MONTHLY
         )
-        assertEquals(WidgetLine("通話時間", "42.0", "分"), content.timeLine)
-        assertEquals(WidgetLine("無料枠", "28.0", "分"), content.quotaLine)
-        assertEquals(WidgetLine("通話金額", "0", "円"), content.amountLine)
+        assertEquals(WidgetLine("通話時間", "42.0", "分", WIDGET_TIME_REFERENCE), content.timeLine)
+        assertEquals(WidgetLine("無料枠", "28.0", "分", WIDGET_TIME_REFERENCE), content.quotaLine)
+        assertEquals(WidgetLine("通話金額", "0", "円", WIDGET_AMOUNT_REFERENCE), content.amountLine)
     }
 
     @Test
@@ -113,6 +113,58 @@ class WidgetPresentationTest {
         assertEquals("0", formatAmount(0))
         assertEquals("999", formatAmount(999))
         assertEquals("1,000,000", formatAmount(1000000))
+    }
+
+    // --- 文字サイズをそろえる基準文字列（5.5.1） ---
+
+    @Test
+    fun `all plans share one reference for the minute rows`() {
+        val perCall = presentWidget(
+            result(countedSec = 60, amount = 0), settings(0, 300), PlanType.PER_CALL
+        )
+        val payAsYouGo = presentWidget(
+            result(countedSec = 60 * 60, amount = 1320), settings(0, 0), PlanType.PAY_AS_YOU_GO
+        )
+        assertEquals(WIDGET_TIME_REFERENCE, perCall.timeLine.reference)
+        assertEquals(perCall.timeLine.reference, payAsYouGo.timeLine.reference)
+    }
+
+    @Test
+    fun `the monthly plan lines up its two minute rows with each other`() {
+        // 行の幅を決めているのは数字行なので、整数部の桁数が違うと autoSize が選ぶサイズが
+        // 大きく食い違う（1x2 の実機で cap 高 37px と 29px）。同じ基準でそろえる
+        val content = presentWidget(
+            result(countedSec = 3 * 60, amount = 0), settings(15 * 60), PlanType.MONTHLY
+        )
+        assertEquals("3.0", content.timeLine.value)
+        assertEquals("12.0", content.quotaLine?.value)
+        assertEquals(WIDGET_TIME_REFERENCE, content.timeLine.reference)
+        assertEquals(WIDGET_TIME_REFERENCE, content.quotaLine?.reference)
+    }
+
+    @Test
+    fun `every plan shares one reference for the amount`() {
+        val references = listOf(
+            presentWidget(result(countedSec = 60, amount = 0), settings(70 * 60), PlanType.MONTHLY),
+            presentWidget(result(countedSec = 60, amount = 0), settings(0, 300), PlanType.PER_CALL),
+            presentWidget(result(countedSec = 60, amount = 22), settings(0, 0), PlanType.PAY_AS_YOU_GO)
+        ).map { it.amountLine.reference }
+        assertEquals(listOf(WIDGET_AMOUNT_REFERENCE, WIDGET_AMOUNT_REFERENCE, WIDGET_AMOUNT_REFERENCE), references)
+    }
+
+    @Test
+    fun `the references are as wide as the values they line up`() {
+        // 桁埋めは文字数の差で数えるため、基準と実際の値は「桁数以外は同じ形」である必要がある。
+        // 通話時間は必ず小数第一位まで、金額は 3 桁までなら区切り記号が入らない
+        assertEquals("00.0", WIDGET_TIME_REFERENCE)
+        assertEquals(WIDGET_TIME_REFERENCE.length, formatMinutes(17 * 60).length)
+        assertEquals(WIDGET_TIME_REFERENCE.length - 1, formatMinutes(60).length)
+        assertEquals("000", WIDGET_AMOUNT_REFERENCE)
+        assertEquals(WIDGET_AMOUNT_REFERENCE.length, formatAmount(374).length)
+        assertEquals(WIDGET_AMOUNT_REFERENCE.length - 2, formatAmount(0).length)
+        // 基準より長い値は桁埋めされず、その行だけ縮小される
+        assertEquals(true, formatAmount(6800).length > WIDGET_AMOUNT_REFERENCE.length)
+        assertEquals(true, formatMinutes(120 * 60).length > WIDGET_TIME_REFERENCE.length)
     }
 
     // --- 月間定額型: 配色境界 (79% / 80% / 99% / 100%) ---
@@ -165,9 +217,9 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 300),
             PlanType.PER_CALL
         )
-        assertEquals(WidgetLine("通話時間", "128.0", "分"), content.timeLine)
+        assertEquals(WidgetLine("通話時間", "128.0", "分", WIDGET_TIME_REFERENCE), content.timeLine)
         assertEquals(null, content.quotaLine)
-        assertEquals(WidgetLine("通話金額", "374", "円"), content.amountLine)
+        assertEquals(WidgetLine("通話金額", "374", "円", WIDGET_AMOUNT_REFERENCE), content.amountLine)
     }
 
     @Test
@@ -199,7 +251,7 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 0),
             PlanType.PAY_AS_YOU_GO
         )
-        assertEquals(WidgetLine("通話時間", "42.0", "分"), content.timeLine)
+        assertEquals(WidgetLine("通話時間", "42.0", "分", WIDGET_TIME_REFERENCE), content.timeLine)
         assertEquals(null, content.quotaLine)
         assertEquals("451", content.amountLine.value)
     }

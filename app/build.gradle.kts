@@ -66,6 +66,44 @@ fun computeBuildVersion(): BuildVersion {
 val buildVersion = computeBuildVersion()
 println("CallTimeChecker version: name=${buildVersion.name} code=${buildVersion.code}")
 
+/** リリース APK の署名情報。.github/workflows/release.yml が環境変数で渡す */
+data class SigningEnv(
+    val storeFile: File,
+    val storePassword: String,
+    val alias: String,
+    val keyPassword: String
+)
+
+/**
+ * 署名情報を環境変数から読む。名前は release.yml が渡すものに合わせている。
+ * ローカルビルドでは環境変数が無いので null（＝未署名の APK になる）。
+ * 一部だけ設定されている状態は CI のシークレット設定漏れなので、黙って未署名の
+ * APK を出さずにビルドを失敗させる。未署名の APK は端末にインストールできず、
+ * しかも release.yml の APK 探索はファイル名で区別しないためリリースに載ってしまう。
+ */
+fun computeSigningEnv(): SigningEnv? {
+    fun env(name: String): String? =
+        providers.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+
+    val names = listOf("KEYSTORE_PATH", "KEY_STORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+    val values = names.map { env(it) }
+    if (values.all { it == null }) return null
+
+    val missing = names.zip(values).filter { it.second == null }.map { it.first }
+    require(missing.isEmpty()) {
+        "リリース署名用の環境変数が足りません: ${missing.joinToString()}（GitHub のシークレット設定を確認してください）"
+    }
+
+    val storeFile = File(values[0]!!)
+    require(storeFile.isFile) {
+        "KEYSTORE_PATH のファイルが見つかりません: ${storeFile.absolutePath}"
+    }
+    return SigningEnv(storeFile, values[1]!!, values[2]!!, values[3]!!)
+}
+
+val signingEnv = computeSigningEnv()
+println("CallTimeChecker signing: " + if (signingEnv == null) "なし（未署名でビルドします）" else "あり")
+
 android {
     namespace = "io.github.eightbrows.CallTimeChecker"
     compileSdk {
@@ -82,8 +120,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        signingEnv?.let { env ->
+            create("release") {
+                storeFile = env.storeFile
+                storePassword = env.storePassword
+                keyAlias = env.alias
+                keyPassword = env.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // 環境変数が無いローカルビルドでは null のまま（＝未署名）
+            signingConfig = signingConfigs.findByName("release")
             optimization {
                 enable = false
             }

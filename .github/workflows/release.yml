@@ -40,7 +40,14 @@ jobs:
       - name: Rename APK
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          # 署名済みビルドの成果物だけを対象にする。署名情報が渡っていないと AGP は
+          # app-release-unsigned.apk を出すので、それをリリースに載せないための番人。
+          SRC=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$SRC" ]; then
+            echo "署名済み APK が見つかりません。シークレットが空になっていないか確認してください:"
+            ls -l app/build/outputs/apk/release
+            exit 1
+          fi
           mkdir -p dist
           cp "$SRC" "dist/calltimechecker-${VERSION}.apk"
           cp "$SRC" "dist/calltimechecker-latest.apk"

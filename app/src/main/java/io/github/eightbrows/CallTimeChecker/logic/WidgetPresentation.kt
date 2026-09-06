@@ -36,6 +36,16 @@ const val WIDGET_TIME_REFERENCE = "00.0"
 /** spec: docs/spec.md 5.5.1 「通話金額」の基準文字列。3 プラン共通で 3 桁 */
 const val WIDGET_AMOUNT_REFERENCE = "000"
 
+/** spec: docs/spec.md 5.5.1 「通話金額」のラベル */
+private const val WIDGET_AMOUNT_LABEL = "通話金額"
+
+/**
+ * spec: docs/spec.md 5.5.1 直近の再描画が 30 分周期の自動更新（onUpdate）だったことを示す印。
+ * 表示中の数字がタップした瞬間のものか、周期更新で入れ替わったものかを見分けるためのもの。
+ * 手動更新・設定変更による再描画では付けない。
+ */
+const val WIDGET_AUTO_UPDATE_MARK = "⌚"
+
 /**
  * spec: docs/spec.md 5.5.1 ウィジェット表示内容。
  * 上段（3/5）は通話時間と無料枠、下段（2/5）は通話金額。
@@ -74,10 +84,16 @@ fun presentWidget(
     result: Result,
     settings: Settings,
     planType: PlanType,
-    warnRemainingSec: Int
+    warnRemainingSec: Int,
+    /**
+     * spec: docs/spec.md 5.5.1 直近の再描画が自動更新（onUpdate）だったかどうか。
+     * true のときだけ「通話金額」のラベルに印を付ける。印はラベルの一部として扱い、
+     * 数字の側には触れない（基準文字列による桁そろえに影響させないため）。
+     */
+    autoUpdated: Boolean = false
 ): WidgetContent {
     val amountLine = WidgetLine(
-        label = "通話金額",
+        label = if (autoUpdated) "$WIDGET_AMOUNT_LABEL $WIDGET_AUTO_UPDATE_MARK" else WIDGET_AMOUNT_LABEL,
         value = formatAmount(result.amount),
         unit = "円",
         reference = WIDGET_AMOUNT_REFERENCE

@@ -520,6 +520,47 @@ class WidgetPresentationTest {
         }
     }
 
+    // --- 自動更新の印（5.5.1） ---
+
+    @Test
+    fun `the amount label carries a mark when the redraw came from the periodic update`() {
+        val content = presentWidget(
+            result(20 * 60, 0), settings(70 * 60), PlanType.MONTHLY, 14 * 60, autoUpdated = true
+        )
+        assertEquals("通話金額 ⌚", content.amountLine.label)
+        // 印はラベルだけの話で、数字・単位・桁そろえの基準には触れない
+        assertEquals("0", content.amountLine.value)
+        assertEquals("円", content.amountLine.unit)
+        assertEquals(WIDGET_AMOUNT_REFERENCE, content.amountLine.reference)
+    }
+
+    @Test
+    fun `the amount label has no mark for a manual or settings driven redraw`() {
+        for (plan in PlanType.entries) {
+            val content = presentWidget(result(20 * 60, 0), settings(70 * 60), plan)
+            assertEquals("通話金額", content.amountLine.label)
+        }
+    }
+
+    @Test
+    fun `the mark is on the amount only, never on the minute rows`() {
+        val content = presentWidget(
+            result(20 * 60, 0), settings(70 * 60), PlanType.MONTHLY, 14 * 60, autoUpdated = true
+        )
+        assertEquals("通話時間", content.timeLine.label)
+        assertEquals("無料枠", content.quotaLine?.label)
+    }
+
+    @Test
+    fun `every plan can show the mark`() {
+        for (plan in PlanType.entries) {
+            val content = presentWidget(
+                result(20 * 60, 0), settings(70 * 60), plan, 14 * 60, autoUpdated = true
+            )
+            assertEquals("通話金額 $WIDGET_AUTO_UPDATE_MARK", content.amountLine.label)
+        }
+    }
+
     private fun contrastRatio(a: Int, b: Int): Double {
         val la = relativeLuminance(a)
         val lb = relativeLuminance(b)

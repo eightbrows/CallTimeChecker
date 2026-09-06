@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -49,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +70,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.eightbrows.CallTimeChecker.data.CallLogSync
 import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
+import io.github.eightbrows.CallTimeChecker.logic.AppSettings
 import io.github.eightbrows.CallTimeChecker.logic.CallDetail
 import io.github.eightbrows.CallTimeChecker.logic.CallRecord
 import io.github.eightbrows.CallTimeChecker.logic.PlanType
@@ -83,6 +86,7 @@ import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
 import io.github.eightbrows.CallTimeChecker.ui.SettingsScreen
 import io.github.eightbrows.CallTimeChecker.ui.theme.CallTimeCheckerTheme
+import io.github.eightbrows.CallTimeChecker.ui.theme.shouldUseDarkTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,6 +94,15 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+/**
+ * enableEdgeToEdge() の既定値と同じナビゲーションバーのスクリム。
+ * 定数自体は androidx.activity の非公開値のため、同じ色をここに置く
+ * （システムバーのアイコン色だけを差し替えたいので、他は既定のまま揃える）。
+ */
+private const val NAV_BAR_LIGHT_SCRIM = 0xE6FFFFFF.toInt()
+private const val NAV_BAR_DARK_SCRIM = 0x801B1B1B.toInt()
+private const val SYSTEM_BAR_TRANSPARENT = 0
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,11 +113,32 @@ class MainActivity : ComponentActivity() {
         val settingsRepository = SettingsRepository(applicationContext)
 
         setContent {
-            CallTimeCheckerTheme {
+            // spec 5.7: 配色（themeMode）はテーマの引数なので、設定値の状態は
+            // CallTimeCheckerTheme より外側で持つ必要がある。設定画面から書き換わった値を
+            // そのまま画面側でも使うため、MutableState のまま CallTimeCheckerApp へ渡す
+            val appSettingsState = remember { mutableStateOf(settingsRepository.load()) }
+            val darkTheme = shouldUseDarkTheme(appSettingsState.value.themeMode)
+
+            // enableEdgeToEdge() はシステムバーのアイコン色を端末のダークテーマ設定から決めるため、
+            // 端末がライトでアプリだけダーク（およびその逆）のときにアイコンが背景に埋もれる。
+            // 選ばれた配色を渡して呼び直す
+            LaunchedEffect(darkTheme) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(
+                        SYSTEM_BAR_TRANSPARENT, SYSTEM_BAR_TRANSPARENT
+                    ) { darkTheme },
+                    navigationBarStyle = SystemBarStyle.auto(
+                        NAV_BAR_LIGHT_SCRIM, NAV_BAR_DARK_SCRIM
+                    ) { darkTheme }
+                )
+            }
+
+            CallTimeCheckerTheme(darkTheme = darkTheme) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     CallTimeCheckerApp(
                         dbHelper = dbHelper,
                         settingsRepository = settingsRepository,
+                        appSettingsState = appSettingsState,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -144,6 +178,7 @@ private sealed interface UiState {
 private fun CallTimeCheckerApp(
     dbHelper: CallRecordDbHelper,
     settingsRepository: SettingsRepository,
+    appSettingsState: MutableState<AppSettings>,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -151,7 +186,8 @@ private fun CallTimeCheckerApp(
     val zone = remember { ZoneId.systemDefault() }
 
     var screen by remember { mutableStateOf<Screen>(Screen.Main) }
-    var appSettings by remember { mutableStateOf(settingsRepository.load()) }
+    // 状態の持ち主は MainActivity（配色をテーマに渡すため）。ここでは読み書きするだけ
+    var appSettings by appSettingsState
     var breakdownFilter by remember { mutableStateOf(BreakdownFilter.ALL) }
     // spec 5.6.1 月送り。今月からの相対位置（0 = 今月、-1 = 前月…）で保持する。
     // 画面の状態としてだけ持つため、アプリを終了して開き直すと今月に戻る

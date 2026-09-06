@@ -15,6 +15,7 @@ import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesToText
 import io.github.eightbrows.CallTimeChecker.logic.migrateAppSettings
 import io.github.eightbrows.CallTimeChecker.logic.normalizeUnitSec
 import io.github.eightbrows.CallTimeChecker.logic.parseExcludePrefixes
+import io.github.eightbrows.CallTimeChecker.logic.themeModeFromPrefsValue
 import io.github.eightbrows.CallTimeChecker.widget.notifyWidgetsSettingsChanged
 
 private const val PREFS_NAME = "call_time_checker_settings"
@@ -33,6 +34,7 @@ private const val KEY_WARN_CONSUMED_MIN_LEGACY = "warn_threshold_min"
 private const val KEY_WIDGET_COLOR_NORMAL = "widget_color_normal"
 private const val KEY_WIDGET_COLOR_WARNING = "widget_color_warning"
 private const val KEY_WIDGET_COLOR_OVER = "widget_color_over"
+private const val KEY_THEME_MODE = "theme_mode"
 
 /** 警告しきい値（残り時間）が未保存であることを表す番兵。0 は「警告色を使わない」を意味する正当な値のため使えない */
 private const val WARN_REMAINING_UNSET = -1
@@ -87,7 +89,10 @@ class SettingsRepository(context: Context) {
             ),
             widgetColorOverIndex = clampWidgetColorIndex(
                 prefs.getInt(KEY_WIDGET_COLOR_OVER, DEFAULT_APP_SETTINGS.widgetColorOverIndex)
-            )
+            ),
+            // 保存されるのは enum の名前ではなく ThemeMode.prefsValue。未保存・未知の値は
+            // themeModeFromPrefsValue() が既定（システムに従う）へ倒す
+            themeMode = themeModeFromPrefsValue(prefs.getString(KEY_THEME_MODE, null))
             )
         )
     }
@@ -128,6 +133,7 @@ class SettingsRepository(context: Context) {
             .putInt(KEY_WIDGET_COLOR_NORMAL, settings.widgetColorNormalIndex)
             .putInt(KEY_WIDGET_COLOR_WARNING, settings.widgetColorWarningIndex)
             .putInt(KEY_WIDGET_COLOR_OVER, settings.widgetColorOverIndex)
+            .putString(KEY_THEME_MODE, settings.themeMode.prefsValue)
             .apply()
         notifyWidgetsSettingsChanged(appContext)
     }

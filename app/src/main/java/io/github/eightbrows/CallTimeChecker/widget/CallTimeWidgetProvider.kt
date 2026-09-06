@@ -165,11 +165,18 @@ fun notifyWidgetsSettingsChanged(context: Context) {
  */
 class CallTimeWidgetProvider : AppWidgetProvider() {
 
+    /**
+     * updatePeriodMillis による周期更新とウィジェット追加時に呼ばれる。
+     * spec 5.5.1: この経路で描いた表示だけ「通話金額」に自動更新の印を付ける
+     * （手動更新・設定変更は onReceive 側の経路なので印は付かない）。
+     */
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         val pendingResult = goAsync()
         EXECUTOR.execute {
             try {
-                runBlocking { refreshAndRender(context, appWidgetManager, appWidgetIds) }
+                runBlocking {
+                    refreshAndRender(context, appWidgetManager, appWidgetIds, autoUpdated = true)
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -205,7 +212,13 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         EXECUTOR.execute {
             try {
-                runBlocking { refreshAndRender(context, appWidgetManager, appWidgetIds, minDisplayUntil, sync) }
+                runBlocking {
+                    // 手動更新・設定変更のどちらも利用者の操作によるものなので印は付けない
+                    refreshAndRender(
+                        context, appWidgetManager, appWidgetIds, minDisplayUntil, sync,
+                        autoUpdated = false
+                    )
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -217,16 +230,19 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
         minDisplayUntil: Long? = null,
-        sync: Boolean = true
+        sync: Boolean = true,
+        autoUpdated: Boolean = false
     ) {
         val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
 
+        // 権限要求 / 更新中 / 更新失敗の各表示は「通話金額」の行自体を出さないので、
+        // 自動更新の印もこれらの状態には現れない
         val views = if (!hasPermission) {
             buildNoPermissionViews(context)
         } else {
             try {
-                buildNormalViews(context, sync)
+                buildNormalViews(context, sync, autoUpdated)
             } catch (e: Exception) {
                 Log.e(TAG, "refresh failed", e)
                 buildErrorViews(context)
@@ -245,7 +261,11 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         Log.d(TAG, "updateAppWidget done for ${appWidgetIds.toList()}")
     }
 
-    private suspend fun buildNormalViews(context: Context, sync: Boolean): RemoteViews {
+    private suspend fun buildNormalViews(
+        context: Context,
+        sync: Boolean,
+        autoUpdated: Boolean
+    ): RemoteViews {
         val dbHelper = CallRecordDbHelper(context)
         try {
             val appSettings = SettingsRepository(context).load()
@@ -261,7 +281,8 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             }
             val result = calculate(records, settings)
             val content = presentWidget(
-                result, settings, appSettings.planType, appSettings.warnRemainingMin * 60
+                result, settings, appSettings.planType, appSettings.warnRemainingMin * 60,
+                autoUpdated
             )
 
             val views = RemoteViews(context.packageName, R.layout.widget_call_time)

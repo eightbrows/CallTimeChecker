@@ -10,6 +10,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import io.github.eightbrows.CallTimeChecker.logic.ThemeMode
 
 private val DarkColorScheme = darkColorScheme(
     primary = Purple80,
@@ -32,6 +33,18 @@ private val LightColorScheme = lightColorScheme(
     onSurface = Color(0xFF1C1B1F),
     */
 )
+
+/**
+ * spec: docs/spec.md 5.7 配色の設定値 → ダークテーマかどうか。
+ * 端末の設定を見るのは「システムに従う」のときだけで、ライト／ダークを選んだ場合は
+ * 端末の設定に関係なくその配色を使う。
+ */
+@Composable
+fun shouldUseDarkTheme(mode: ThemeMode): Boolean = when (mode) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
 
 @Composable
 fun CallTimeCheckerTheme(

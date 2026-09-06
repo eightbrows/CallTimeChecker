@@ -1,5 +1,8 @@
 package io.github.eightbrows.CallTimeChecker.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,16 +48,20 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import io.github.eightbrows.CallTimeChecker.BuildConfig
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
 import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_APP_SETTINGS
 import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_EXCLUDE_PREFIXES
 import io.github.eightbrows.CallTimeChecker.logic.PlanType
+import io.github.eightbrows.CallTimeChecker.logic.ThemeMode
 import io.github.eightbrows.CallTimeChecker.logic.clampMonthlyFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
@@ -77,10 +84,21 @@ import io.github.eightbrows.CallTimeChecker.logic.normalizeUnitSec
 import io.github.eightbrows.CallTimeChecker.logic.parseExcludePrefixes
 import io.github.eightbrows.CallTimeChecker.logic.perCallFreeMinRange
 import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
+import io.github.eightbrows.CallTimeChecker.logic.themeModeLabel
 import io.github.eightbrows.CallTimeChecker.logic.validateRange
 import io.github.eightbrows.CallTimeChecker.logic.widgetBgTransparencyLabel
 import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
+
+/**
+ * spec: docs/spec.md 5.7 バージョン情報から開くリンク。
+ * ライセンスはリポジトリの LICENSE を直接指す（既定ブランチは master）。
+ * アプリ内にライセンス全文を同梱せず GitHub 上のファイルを開くのは、
+ * 表示のためだけに 200 行のテキストと専用画面を抱えないため。
+ */
+private const val LICENSE_URL =
+    "https://github.com/eightbrows/CallTimeChecker/blob/master/LICENSE"
+private const val OFFICIAL_SITE_URL = "https://eightbrows.github.io/"
 
 /**
  * spec: docs/spec.md 5.7 設定項目（プラン形式・起算日・定額枠・通話別無料時間・課金単位・単位金額・除外番号リスト）。
@@ -115,6 +133,7 @@ fun SettingsScreen(
     var colorNormalIndex by remember { mutableStateOf(current.widgetColorNormalIndex) }
     var colorWarningIndex by remember { mutableStateOf(current.widgetColorWarningIndex) }
     var colorOverIndex by remember { mutableStateOf(current.widgetColorOverIndex) }
+    var themeMode by remember { mutableStateOf(current.themeMode) }
     var excludeText by remember { mutableStateOf(excludePrefixesToText(current.excludePrefixes)) }
     var excludeExpanded by remember { mutableStateOf(false) }
 
@@ -181,7 +200,8 @@ fun SettingsScreen(
             ),
             widgetColorNormalIndex = clampWidgetColorIndex(colorNormalIndex),
             widgetColorWarningIndex = clampWidgetColorIndex(colorWarningIndex),
-            widgetColorOverIndex = clampWidgetColorIndex(colorOverIndex)
+            widgetColorOverIndex = clampWidgetColorIndex(colorOverIndex),
+            themeMode = themeMode
         )
         return effectiveAppSettings(raw)
     }
@@ -287,6 +307,9 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
 
             WidgetBgTransparencySection(widgetBgTransparencyStep) { widgetBgTransparencyStep = it }
+            Spacer(Modifier.height(8.dp))
+
+            ThemeModeSection(themeMode) { themeMode = it }
             Spacer(Modifier.height(16.dp))
 
             HorizontalDivider()
@@ -294,10 +317,7 @@ fun SettingsScreen(
             PermissionSection(hasPermission, onRequestPermission, onOpenAppSettings)
             Spacer(Modifier.height(12.dp))
 
-            Text(
-                "バージョン: ${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.bodySmall
-            )
+            AboutSection()
         }
     }
 }
@@ -770,6 +790,90 @@ private fun ExcludePrefixesSection(
     // 保存済みリストは初期値が更新されても自動では追従しないため（5.3.2 の初期値変更時など）、
     // 明示的に初期値へ戻す手段を用意する。押した時点では入力欄を書き換えるだけで、確定は「保存」。
     OutlinedButton(onClick = onReset) { Text("初期値に戻す") }
+}
+
+/**
+ * spec: docs/spec.md 5.7 アプリ本体の配色（ライト / ダーク / システムに従う）。
+ * ウィジェットの背景色とは別物なので、ウィジェット関連の項目の後ろに独立して置く。
+ */
+@Composable
+private fun ThemeModeSection(selected: ThemeMode, onSelect: (ThemeMode) -> Unit) {
+    Text("アプリの配色", style = MaterialTheme.typography.titleMedium)
+    Row(Modifier.fillMaxWidth()) {
+        ThemeMode.entries.forEach { mode ->
+            ThemeModeOption(mode, selected, Modifier.weight(1f), onSelect)
+        }
+    }
+}
+
+@Composable
+private fun ThemeModeOption(
+    value: ThemeMode,
+    selected: ThemeMode,
+    modifier: Modifier = Modifier,
+    onSelect: (ThemeMode) -> Unit
+) {
+    // PlanTypeOption と同じ縦並び。「システムに従う」はラジオの横に置くと 1 行に収まらない
+    Column(
+        modifier = modifier.clickable { onSelect(value) },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        RadioButton(selected = selected == value, onClick = { onSelect(value) })
+        Text(themeModeLabel(value), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+    }
+}
+
+/**
+ * spec: docs/spec.md 5.7 バージョン情報。
+ * 「項目名: 値」の並びで、外部ページを開く行だけリンク色 + 下線にして押せることを示す。
+ */
+@Composable
+private fun AboutSection() {
+    val context = LocalContext.current
+
+    fun openInBrowser(url: String) {
+        // ブラウザは別タスクで開く。設定画面のバックスタックに積むと「戻る」の行き先が変わる
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            // ブラウザを持たない端末でも落とさない
+            Toast.makeText(context, "ブラウザが見つかりません", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    AboutRow("バージョン", BuildConfig.VERSION_NAME)
+    AboutRow("ライセンス", "Apache License 2.0") { openInBrowser(LICENSE_URL) }
+    AboutRow("公式サイト", "eightbrows.github.io") { openInBrowser(OFFICIAL_SITE_URL) }
+}
+
+/**
+ * バージョン情報の 1 行。onClick を渡した行はリンクとして描く。
+ * 行全体を押せるようにしたうえで、下線が付くのは値の側だけにしている
+ * （リンク先は値が表しているため）。文字が小さいぶん、行に最低高さを持たせて
+ * 指で押せる大きさを確保する。
+ */
+@Composable
+private fun AboutRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
+            .heightIn(min = if (onClick == null) 0.dp else 40.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("$label: ", style = MaterialTheme.typography.bodySmall)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (onClick == null) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+            textDecoration = if (onClick == null) null else TextDecoration.Underline
+        )
+    }
 }
 
 @Composable

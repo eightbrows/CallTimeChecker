@@ -515,4 +515,55 @@ class AppSettingsTest {
         assertEquals(WIDGET_COLOR_PALETTE.lastIndex, migrated.widgetColorWarningIndex)
         assertEquals(3, migrated.widgetColorOverIndex)
     }
+
+    // --- アプリ本体の配色（5.7） ---
+
+    @Test
+    fun `the theme defaults to following the device setting`() {
+        assertEquals(ThemeMode.SYSTEM, DEFAULT_APP_SETTINGS.themeMode)
+        assertEquals(ThemeMode.SYSTEM, DEFAULT_THEME_MODE)
+    }
+
+    @Test
+    fun `each theme mode has its own label`() {
+        val labels = ThemeMode.entries.map { themeModeLabel(it) }
+        assertEquals(listOf("システムに従う", "ライト", "ダーク"), labels)
+        // 選択肢の見分けが付かなくならないよう、表示名は重複させない
+        assertEquals(labels.size, labels.toSet().size)
+    }
+
+    @Test
+    fun `theme modes round trip through their stored value`() {
+        for (mode in ThemeMode.entries) {
+            assertEquals(mode, themeModeFromPrefsValue(mode.prefsValue))
+        }
+    }
+
+    @Test
+    fun `stored theme values do not depend on the enum names`() {
+        // R8 の難読化で name が変わっても保存済みの値が読めるよう、保存値は独立に持つ。
+        // 値を変えると利用者の設定が既定へ戻るので、ここで固定しておく
+        assertEquals("system", ThemeMode.SYSTEM.prefsValue)
+        assertEquals("light", ThemeMode.LIGHT.prefsValue)
+        assertEquals("dark", ThemeMode.DARK.prefsValue)
+        assertEquals(ThemeMode.entries.size, ThemeMode.entries.map { it.prefsValue }.toSet().size)
+    }
+
+    @Test
+    fun `an unsaved or unknown theme value falls back to the default`() {
+        assertEquals(DEFAULT_THEME_MODE, themeModeFromPrefsValue(null))
+        assertEquals(DEFAULT_THEME_MODE, themeModeFromPrefsValue(""))
+        assertEquals(DEFAULT_THEME_MODE, themeModeFromPrefsValue("SYSTEM"))
+        assertEquals(DEFAULT_THEME_MODE, themeModeFromPrefsValue("midnight"))
+    }
+
+    @Test
+    fun `migration leaves the theme alone`() {
+        // 配色はプラン形式・定額枠と無関係な独立した設定なので、正規化の影響を受けない
+        for (mode in ThemeMode.entries) {
+            val stored = DEFAULT_APP_SETTINGS.copy(themeMode = mode)
+            assertEquals(mode, migrateAppSettings(stored).themeMode)
+            assertEquals(mode, effectiveAppSettings(stored).themeMode)
+        }
+    }
 }

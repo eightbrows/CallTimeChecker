@@ -9,6 +9,33 @@ package io.github.eightbrows.CallTimeChecker.logic
 enum class PlanType { MONTHLY, PER_CALL, PAY_AS_YOU_GO }
 
 /**
+ * spec: docs/spec.md 5.7 アプリ本体の配色。
+ * SYSTEM は端末のダークテーマ設定に従う（Compose の isSystemInDarkTheme()）。
+ *
+ * prefsValue は保存用の文字列で、enum の名前とは独立に持つ。リリースビルドは R8 で
+ * 難読化されるため、name に依存すると保存済みの値が読めなくなる可能性がある。
+ */
+enum class ThemeMode(val prefsValue: String) {
+    SYSTEM("system"),
+    LIGHT("light"),
+    DARK("dark")
+}
+
+/** spec: docs/spec.md 5.7 配色の表示名（設定画面のラジオ） */
+fun themeModeLabel(mode: ThemeMode): String = when (mode) {
+    ThemeMode.SYSTEM -> "システムに従う"
+    ThemeMode.LIGHT -> "ライト"
+    ThemeMode.DARK -> "ダーク"
+}
+
+/** 保存値（prefsValue）→ ThemeMode。未保存・未知の値はいずれも既定の「システムに従う」に倒す */
+fun themeModeFromPrefsValue(value: String?): ThemeMode =
+    ThemeMode.entries.firstOrNull { it.prefsValue == value } ?: DEFAULT_THEME_MODE
+
+/** spec: docs/spec.md 5.7 配色の初期値。端末の設定を尊重するため「システムに従う」 */
+val DEFAULT_THEME_MODE = ThemeMode.SYSTEM
+
+/**
  * spec: docs/spec.md 5.7 設定画面が保持する設定値（分単位）。
  * Billing.kt の Settings（秒単位）とは独立に保持し、toBillingSettings() で変換する。
  */
@@ -35,7 +62,12 @@ data class AppSettings(
     /** spec: docs/spec.md 5.7 ウィジェット背景色（警告色）のパレット添字 */
     val widgetColorWarningIndex: Int,
     /** spec: docs/spec.md 5.7 ウィジェット背景色（超過色）のパレット添字 */
-    val widgetColorOverIndex: Int
+    val widgetColorOverIndex: Int,
+    /**
+     * spec: docs/spec.md 5.7 アプリ本体の配色。ウィジェットの配色（背景色パレット）とは
+     * 別物で、こちらはアプリ画面のライト／ダークだけを決める。
+     */
+    val themeMode: ThemeMode
 )
 
 /** spec: docs/spec.md 5.7 初期値 */
@@ -52,7 +84,8 @@ val DEFAULT_APP_SETTINGS = AppSettings(
     warnRemainingMin = 14,
     widgetColorNormalIndex = WIDGET_COLOR_INDEX_WHITE,
     widgetColorWarningIndex = WIDGET_COLOR_INDEX_ORANGE,
-    widgetColorOverIndex = WIDGET_COLOR_INDEX_RED
+    widgetColorOverIndex = WIDGET_COLOR_INDEX_RED,
+    themeMode = DEFAULT_THEME_MODE
 )
 
 /**

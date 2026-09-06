@@ -58,7 +58,7 @@
 
 ## インストール
 
-**このアプリは Google Play では配布していません。** `READ_CALL_LOG` は Play ストア側で用途審査の対象となる権限のため、GitHub Releases からの自己配布としています。
+**このアプリは Google Play では配布していません。
 
 1. [Releases](https://github.com/eightbrows/CallTimeChecker/releases) から最新の `calltimechecker-*.apk` をダウンロードする
 2. 端末の「提供元不明のアプリ」/「不明なアプリのインストール」を、ダウンロードに使ったブラウザ等に対して許可する
@@ -67,50 +67,11 @@
 5. 設定画面で契約内容（起算日・定額枠・単価など）を入力する
 6. ホーム画面にウィジェットを配置する
 
+**インストールが完了したら、手順2で許可した「提供元不明のアプリ」の設定は元に戻す（無効にする）ことをおすすめします。** 許可したままにしておくと、他の提供元不明のアプリも同じ経路でインストールできる状態が続いてしまい、セキュリティ上のリスクになります。
+
 権限を許可しないと通話履歴を読めないため、集計は動きません。ウィジェットからは権限要求ができないので、未許可のうちは「タップして権限を許可」と表示され、タップするとアプリ本体が開いて要求ダイアログが出ます。
 
 自動更新が効かない場合は、端末の設定でこのアプリのバッテリー最適化を無効（バックグラウンド動作を「制限なし」）にしてください。
-
-## ビルド
-
-### 必要なもの
-
-- Android Studio（AGP 9.3.1 に対応するバージョン）
-- JDK 17
-- Android SDK Platform 37
-
-### Android Studio での手順
-
-1. リポジトリをクローンする
-
-   ```
-   git clone https://github.com/eightbrows/CallTimeChecker.git
-   ```
-
-2. Android Studio で **Open** から `CallTimeChecker` ディレクトリを開く
-3. Gradle Sync の完了を待つ（初回は依存の取得に時間がかかります）
-4. 実機または AVD を選び、**Run 'app'** で起動する
-
-### コマンドラインでの手順
-
-Gradle Wrapper を同梱しているので、Gradle のインストールは不要です。
-
-```
-# デバッグ APK をビルド
-./gradlew assembleDebug        # Windows: gradlew.bat assembleDebug
-
-# ユニットテストを実行
-./gradlew test
-
-# Lint
-./gradlew lint
-```
-
-集計ロジック（期間算出・課金計算・ウィジェット表示内容・設定値の検証）は Android フレームワークに依存しない純粋関数として分離してあり、実機なしで `./gradlew test` だけで検証できます。
-
-### リリースビルド
-
-`YYYYMMDD-Rnn` 形式のタグを push すると GitHub Actions（`.github/workflows/release.yml`）が署名済み APK をビルドし、GitHub Release に添付します。署名鍵はリポジトリのシークレット（`SIGNING_KEY` / `KEY_STORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD`）から渡されるため、ローカルでの `assembleRelease` は未署名の APK になります。
 
 ## 注意事項
 

@@ -58,7 +58,7 @@
 
 ## インストール
 
-**このアプリは Google Play では配布していません。
+**このアプリは Google Play では配布していません。**
 
 1. [Releases](https://github.com/eightbrows/CallTimeChecker/releases) から最新の `calltimechecker-*.apk` をダウンロードする
 2. 端末の「提供元不明のアプリ」/「不明なアプリのインストール」を、ダウンロードに使ったブラウザ等に対して許可する

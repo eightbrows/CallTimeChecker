@@ -89,6 +89,7 @@ import io.github.eightbrows.CallTimeChecker.logic.validateRange
 import io.github.eightbrows.CallTimeChecker.logic.widgetBgTransparencyLabel
 import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
+import androidx.compose.ui.draw.clip
 
 private const val LICENSE_URL =
     "https://github.com/eightbrows/CallTimeChecker/blob/master/LICENSE"
@@ -275,7 +276,7 @@ fun SettingsScreen(
             )
 
             PresetOrCustomRow(
-                label = "課金単位",
+                label = "課金単位（時間）",
                 presets = listOf(30, 60),
                 unitSuffix = "秒",
                 valueText = unitSecText,
@@ -284,7 +285,7 @@ fun SettingsScreen(
             )
 
             PresetOrCustomRow(
-                label = "単位金額",
+                label = "課金単位（単価）",
                 presets = listOf(11, 22),
                 unitSuffix = "円",
                 valueText = unitPriceText,
@@ -402,21 +403,23 @@ private fun SettingsHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () ->
 
 /** N択の排他選択を横並びの帯(セグメントコントロール)で表す汎用コンポーネント */
 @Composable
-private fun <T> SegmentedControl(
+fun <T> SegmentedControl(
     options: List<T>,
     selected: T,
     label: (T) -> String,
     onSelect: (T) -> Unit
 ) {
+    val shape = RoundedCornerShape(8.dp)
     Row(
         Modifier
             .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
     ) {
         options.forEachIndexed { index, option ->
             if (index > 0) {
                 Box(
-                    Modifier.width(1.dp).fillMaxHeight()
+                    Modifier.width(1.dp).height(24.dp)
                         .background(MaterialTheme.colorScheme.outlineVariant)
                 )
             }
@@ -469,10 +472,6 @@ private fun SteppedNumberRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
-            StepperButton("−", enabled = enabled && canDecrease, onClick = onDecrease)
-            Spacer(Modifier.width(14.dp))
-            StepperButton("+", enabled = enabled && canIncrease, onClick = onIncrease)
-            Spacer(Modifier.width(10.dp))
             OutlinedTextField(
                 value = value,
                 onValueChange = { onValueChange(it.filter(Char::isDigit)) },
@@ -483,8 +482,13 @@ private fun SteppedNumberRow(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.width(72.dp)
             )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Text(unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(16.dp))
+            StepperButton("+", enabled = enabled && canIncrease, onClick = onIncrease)
+            Spacer(Modifier.width(16.dp))
+            StepperButton("−", enabled = enabled && canDecrease, onClick = onDecrease)
+            Spacer(Modifier.width(12.dp))
         }
         val note = error ?: disabledNote.takeIf { !enabled }
         if (note != null) {
@@ -500,8 +504,8 @@ private fun SteppedNumberRow(
 
 @Composable
 private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    FilledTonalIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(26.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+    FilledTonalIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(36.dp)) {
+        Text(label, style = MaterialTheme.typography.titleLarge)
     }
 }
 
@@ -537,13 +541,13 @@ private fun PresetOrCustomRow(
                             onClick = { onValueChange(preset.toString()) },
                             modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(2.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text("$preset$unitSuffix", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RadioButton(selected = isCustom, onClick = {}, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(2.dp))
+                    Spacer(Modifier.width(6.dp))
                     OutlinedTextField(
                         value = if (isCustom) valueText else "",
                         onValueChange = { onValueChange(it.filter(Char::isDigit)) },

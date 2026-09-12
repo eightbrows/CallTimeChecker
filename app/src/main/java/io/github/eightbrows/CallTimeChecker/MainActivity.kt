@@ -94,6 +94,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import io.github.eightbrows.CallTimeChecker.ui.SegmentedControl
+import androidx.compose.foundation.layout.Row as ComposeRow
+import androidx.compose.ui.graphics.Color
 
 /**
  * enableEdgeToEdge() の既定値と同じナビゲーションバーのスクリム。
@@ -296,6 +299,7 @@ private fun CallTimeCheckerApp(
                 is UiState.Loaded -> LoadedContent(
                     state = s,
                     planType = appSettings.planType,
+                    startDay = appSettings.startDay,   // ← これを追加
                     zone = zone,
                     pagerState = pagerState,
                     monthOffset = monthOffset,
@@ -346,6 +350,7 @@ private fun ErrorView(message: String, onRetry: () -> Unit) {
 private fun LoadedContent(
     state: UiState.Loaded,
     planType: PlanType,
+    startDay: Int,          // ← これを追加
     zone: ZoneId,
     pagerState: PagerState,
     monthOffset: Int,
@@ -399,7 +404,14 @@ private fun LoadedContent(
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
             Column(Modifier.fillMaxSize()) {
                 when (MainTab.entries[page]) {
-                    MainTab.SUMMARY -> SummarySection(state.period, state.result, state.settings, planType, zone)
+                    MainTab.SUMMARY -> SummarySection(
+                        period = state.period,
+                        result = state.result,
+                        settings = state.settings,
+                        planType = planType,
+                        startDay = startDay,  // ここは LoadedContent の引数を渡すだけ
+                        zone = zone
+                    )
                     MainTab.HISTORY -> HistoryTab(state, filter, onFilterChange)
                 }
             }
@@ -484,11 +496,12 @@ private fun MonthNavigation(monthOffset: Int, onMonthOffsetChange: (Int) -> Unit
  */
 @Composable
 private fun HistorySummary(result: Result) {
-    Text("履歴集計", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    SectionHeading("履歴集計")
     Spacer(Modifier.height(4.dp))
-    Text("通話件数: ${result.callCount}件（課金対象 ${result.billedCallCount}件）")
-    Text("通話時間（実時間）: ${result.countedSec / 60}分${result.countedSec % 60}秒")
-    Text("通話時間（除外）: ${result.excludedSec / 60}分${result.excludedSec % 60}秒")
+    InfoRow("通話件数", "${result.callCount}件（課金対象 ${result.billedCallCount}件）")
+    InfoRow("通話時間（実時間）", "${result.countedSec / 60}分${result.countedSec % 60}秒")
+    InfoRow("通話時間（課金枠換算）", "${result.quotaConsumedSec / 60}分${result.quotaConsumedSec % 60}秒")
+    InfoRow("通話時間（除外）", "${result.excludedSec / 60}分${result.excludedSec % 60}秒")
 }
 
 /** spec: docs/spec.md 5.6.2 通話履歴タブ（履歴集計 + 通話履歴の内訳リスト） */
@@ -502,38 +515,26 @@ private fun ColumnScope.HistoryTab(
     Spacer(Modifier.height(8.dp))
     HorizontalDivider()
     Spacer(Modifier.height(8.dp))
-    Text("通話履歴", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    BreakdownFilterRow(filter, onFilterChange)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        SectionHeading("通話履歴")
+        Box(Modifier.width(200.dp)) {
+            SegmentedControl(
+                options = BreakdownFilter.entries,
+                selected = filter,
+                label = { if (it == BreakdownFilter.ALL) "全件" else "課金対象のみ" },
+                onSelect = onFilterChange
+            )
+        }
+    }
     val filteredDetails = when (filter) {
         BreakdownFilter.ALL -> state.details
         BreakdownFilter.BILLED_ONLY -> state.details.filter { it.billedSec > 0 }
     }
     BreakdownList(filteredDetails, state.settings, modifier = Modifier.weight(1f))
-}
-
-/** spec: docs/spec.md 12 未決事項「内訳リストに『課金対象のみ / 全件』フィルタ機能」 */
-@Composable
-private fun BreakdownFilterRow(filter: BreakdownFilter, onFilterChange: (BreakdownFilter) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        FilterOptionButton("全件", selected = filter == BreakdownFilter.ALL) {
-            onFilterChange(BreakdownFilter.ALL)
-        }
-        FilterOptionButton("課金対象のみ", selected = filter == BreakdownFilter.BILLED_ONLY) {
-            onFilterChange(BreakdownFilter.BILLED_ONLY)
-        }
-    }
-}
-
-@Composable
-private fun FilterOptionButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
-    }
 }
 
 private val PERIOD_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd")
@@ -553,29 +554,27 @@ private fun SummarySection(
     result: Result,
     settings: Settings,
     planType: PlanType,
+    startDay: Int,
     zone: ZoneId
 ) {
     val startDate = Instant.ofEpochMilli(period.first).atZone(zone).toLocalDate()
     val endDate = Instant.ofEpochMilli(period.second - 1).atZone(zone).toLocalDate()
 
     Column {
-        Text("プラン: ${planTypeLabel(planType)}")
-        Text("期間: ${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}")
-        // 無料枠はプラン形式ごとに意味が違うため、そのプランで有効な方だけを出す
+        SectionHeading("設定値")
+        InfoRow("プラン", planTypeLabel(planType))
+        InfoRow("起算日", "${startDay}日")
+        InfoRow("期間", "${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}")
         when (planType) {
-            PlanType.MONTHLY -> Text("無料枠: ${settings.monthlyFreeSec / 60}分")
-            PlanType.PER_CALL -> Text("1通話無料枠: ${settings.perCallFreeSec / 60}分")
+            PlanType.MONTHLY -> InfoRow("無料枠", "${settings.monthlyFreeSec / 60}分")
+            PlanType.PER_CALL -> InfoRow("1通話無料枠", "${settings.perCallFreeSec / 60}分")
             PlanType.PAY_AS_YOU_GO -> Unit
         }
-        // 「11円 / 30秒」の順。何円かが先に来るほうが料金として読みやすいため（5.6.1）
-        Text("単価: ${formatAmount(settings.unitPrice)}円 / ${settings.unitSec}秒")
+        InfoRow("単価", "${formatAmount(settings.unitPrice)}円 / ${settings.unitSec}秒")
 
         SectionDivider()
-        Text("現在の状況", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        SectionHeading("現在の状況")
         Spacer(Modifier.height(8.dp))
-        // 通話時間の基準はウィジェット（5.5.1）と揃える。
-        // 全プランとも、通話金額の計算根拠と一致させるため切り上げ後の課金枠の消費量
-        // （quotaConsumedSec、5.4.4）を使う。実通話時間は「履歴集計」側に併記する。
         when (planType) {
             PlanType.MONTHLY -> {
                 val remainingSec = (settings.monthlyFreeSec - result.quotaConsumedSec).coerceAtLeast(0)
@@ -588,10 +587,8 @@ private fun SummarySection(
             PlanType.PER_CALL -> StatusItem(
                 label = "通話時間",
                 value = "${formatMinutes(result.quotaConsumedSec)}分",
-                // 1 通話ごとの無料時間を超えた通話があれば超過。枠残という概念は無い
                 over = result.billedCallCount > 0
             )
-            // 従量課金は無料枠が無く「超過」が定義できないため、バッジ自体を出さない
             PlanType.PAY_AS_YOU_GO -> StatusItem(
                 label = "通話時間",
                 value = "${formatMinutes(result.quotaConsumedSec)}分",
@@ -603,6 +600,24 @@ private fun SummarySection(
 
         SectionDivider()
         HistorySummary(result)
+    }
+}
+
+/** 見出し。内容(bodyMedium相当)より大きく・太字にして、区切り線の代わりに階層を示す */
+@Composable
+private fun SectionHeading(text: String) {
+    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+}
+
+/** 「項目名(左・小さめ)・値(右)」の統一フォーマットの1行 */
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -677,32 +692,53 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
     val dateTime = remember(record.dateMillis) {
         Instant.ofEpochMilli(record.dateMillis).atZone(zone).toLocalDateTime()
     }
-    // 判定は「実際に料金が発生したか」なので billedSec 基準のまま。
-    // ただしサマリの通話時間は切り上げ後の課金枠の消費量（quotaConsumedSec）基準のため、
-    // 突き合わせられるよう各行に課金枠の秒数も併記する（実時間と一致しない通話がある）
-    val judgement = when {
+
+    val amountLabel = if (detail.billedSec > 0) {
+        "¥${formatAmount(detail.billedSec / settings.unitSec * settings.unitPrice)}"
+    } else {
+        "無料"
+    }
+    val statusLabel = when {
         detail.excluded -> "除外"
         record.durationSec == 0 -> "未応答"
-        detail.billedSec > 0 -> "課金 ¥${formatAmount(detail.billedSec / settings.unitSec * settings.unitPrice)}"
+        detail.billedSec > 0 -> "課金対象"
         else -> "定額内"
     }
     val judgementText = if (detail.quotaConsumedSec > 0) {
-        "$judgement・課金枠 ${detail.quotaConsumedSec}秒"
+        "$amountLabel・$statusLabel・課金枠 ${detail.quotaConsumedSec}秒"
     } else {
-        judgement
+        "$amountLabel・$statusLabel"
+    }
+    // 枠の計算対象になった通話(quotaConsumedSec > 0)だけ、結果に応じて色分けしたドットを付ける。
+    // 除外・未応答はそもそも計算対象外なのでドットなし
+    val dotColor = when {
+        detail.quotaConsumedSec <= 0 -> null
+        detail.billedSec > 0 -> MaterialTheme.colorScheme.error
+        else -> Color(0xFF2E7D32) // 課金なしで済んだことを示す緑
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column {
-            Text(DATETIME_FORMATTER.format(dateTime))
-            Text(record.number ?: "非通知", style = MaterialTheme.typography.bodySmall)
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(DATETIME_FORMATTER.format(dateTime), style = MaterialTheme.typography.bodySmall)
+            Text("${record.durationSec}秒", style = MaterialTheme.typography.bodySmall)
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text("${record.durationSec}秒")
-            Text(judgementText, style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                record.number ?: "非通知",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (dotColor != null) {
+                    Text("●", style = MaterialTheme.typography.labelSmall, color = dotColor)
+                    Spacer(Modifier.width(3.dp))
+                }
+                Text(
+                    judgementText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

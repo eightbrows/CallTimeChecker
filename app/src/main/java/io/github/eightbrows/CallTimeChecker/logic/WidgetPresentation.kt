@@ -194,7 +194,9 @@ val WIDGET_COLOR_PALETTE = listOf(
     WidgetPaletteColor("グリーン", 0xFF388E3C.toInt()),
     WidgetPaletteColor("イエロー", 0xFFFBC02D.toInt()),
     WidgetPaletteColor("オレンジ", 0xFFFFA000.toInt()),
-    WidgetPaletteColor("レッド", 0xFFD32F2F.toInt())
+    WidgetPaletteColor("レッド", 0xFFD32F2F.toInt()),
+    WidgetPaletteColor("ブラック", 0xFF000000.toInt()),
+    WidgetPaletteColor("ティール", 0xFF26C6DA.toInt())
 )
 
 const val WIDGET_COLOR_INDEX_WHITE = 0

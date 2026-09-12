@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
+
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
@@ -39,7 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -53,11 +53,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,7 +97,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import io.github.eightbrows.CallTimeChecker.ui.SegmentedControl
-import androidx.compose.foundation.layout.Row as ComposeRow
+
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -194,7 +196,7 @@ private fun CallTimeCheckerApp(
     var breakdownFilter by remember { mutableStateOf(BreakdownFilter.ALL) }
     // spec 5.6.1 月送り。今月からの相対位置（0 = 今月、-1 = 前月…）で保持する。
     // 画面の状態としてだけ持つため、アプリを終了して開き直すと今月に戻る
-    var monthOffset by remember { mutableStateOf(0) }
+    var monthOffset by remember { mutableIntStateOf(0) }
     // 更新のたびに UiState.Loading を挟むため、選択中のタブは LoadedContent の外で保持する
     val pagerState = rememberPagerState(pageCount = { MainTab.entries.size })
 
@@ -299,7 +301,7 @@ private fun CallTimeCheckerApp(
                 is UiState.Loaded -> LoadedContent(
                     state = s,
                     planType = appSettings.planType,
-                    startDay = appSettings.startDay,   // ← これを追加
+                    startDay = appSettings.startDay,
                     zone = zone,
                     pagerState = pagerState,
                     monthOffset = monthOffset,
@@ -350,7 +352,7 @@ private fun ErrorView(message: String, onRetry: () -> Unit) {
 private fun LoadedContent(
     state: UiState.Loaded,
     planType: PlanType,
-    startDay: Int,          // ← これを追加
+    startDay: Int,
     zone: ZoneId,
     pagerState: PagerState,
     monthOffset: Int,
@@ -396,11 +398,10 @@ private fun LoadedContent(
             }
         }
         Spacer(Modifier.height(12.dp))
-        // 縦スクロールする内訳リストと横スワイプが競合しないよう、方向の切り分けは
-        // HorizontalPager（と LazyColumn）の入れ子スクロールに任せる
-        // 縦スクロールと横スワイプの振り分けは Compose の入れ子スクロールに任せる。
-        // 内訳リストがスクロールできる限り縦ドラッグはリスト側が消費するため、
-        // 多少斜めに振れてもページ送りは始まらない（リストの端まで来ると親のページ送りに渡る）
+        // 縦スクロール（内訳リスト）と横スワイプ（ページ送り）の振り分けは、
+        // HorizontalPager と LazyColumn の入れ子スクロールに任せる。リストがスクロールできる限り
+        // 縦ドラッグはリスト側が消費するため、多少斜めに振れてもページ送りは始まらない
+        // （リストの端まで来ると親のページ送りに渡る）
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
             Column(Modifier.fillMaxSize()) {
                 when (MainTab.entries[page]) {
@@ -409,7 +410,7 @@ private fun LoadedContent(
                         result = state.result,
                         settings = state.settings,
                         planType = planType,
-                        startDay = startDay,  // ここは LoadedContent の引数を渡すだけ
+                        startDay = startDay,
                         zone = zone
                     )
                     MainTab.HISTORY -> HistoryTab(state, filter, onFilterChange)
@@ -424,21 +425,49 @@ private fun LoadedContent(
  * TabRow の既定インジケーターは選択が確定したときにアニメーションするだけで、
  * スワイプ途中の指の位置には追従しない。ページ位置（currentPage + currentPageOffsetFraction）で
  * 隣のタブとの間を補間し、スワイプ量に比例して動くようにする。
+ *
+ * ページ位置はコンポジション中には読まず、Modifier.layout の中（レイアウト段階）で読む。
+ * currentPageOffsetFraction はスワイプ中フレームごとに変わるため、コンポジションで読むと
+ * 毎フレーム再コンポーズになる（lint: FrequentlyChangingValue）。レイアウト段階で読めば
+ * 値が変わったときに走るのは再レイアウトだけで、見た目の追従は変わらない。
  */
 @Composable
 private fun PagerTabIndicator(tabPositions: List<TabPosition>, pagerState: PagerState) {
     if (tabPositions.isEmpty()) return
+    TabRowDefaults.SecondaryIndicator(
+        Modifier
+            .wrapContentSize(Alignment.BottomStart)
+            .pagerIndicatorPosition(tabPositions, pagerState)
+    )
+}
+
+/**
+ * インジケーターの幅と横位置を、ページ位置から補間してレイアウト段階で決める。
+ * 幅は measure（子の constraints を固定幅にする）、横位置は place で反映する。
+ * wrapContentSize の下に置く前提で、受け取る constraints は下限 0・上限がタブ行の幅と高さ。
+ * 自身はタブ行いっぱいの幅を申告し、その中でインジケーターを left の位置に置く
+ * （wrapContentSize が BottomStart にそろえるので縦位置はそちらに任せる）。
+ */
+private fun Modifier.pagerIndicatorPosition(
+    tabPositions: List<TabPosition>,
+    pagerState: PagerState
+): Modifier = layout { measurable, constraints ->
+    // ここが pagerState を読む唯一の場所。コンポジションではなく measure のたびに評価される
     val position = (pagerState.currentPage + pagerState.currentPageOffsetFraction)
         .coerceIn(0f, tabPositions.lastIndex.toFloat())
     val index = position.toInt().coerceIn(0, maxOf(0, tabPositions.lastIndex - 1))
     val next = (index + 1).coerceAtMost(tabPositions.lastIndex)
     val fraction = position - index
-    TabRowDefaults.SecondaryIndicator(
-        Modifier
-            .wrapContentSize(Alignment.BottomStart)
-            .offset(x = lerp(tabPositions[index].left, tabPositions[next].left, fraction))
-            .width(lerp(tabPositions[index].width, tabPositions[next].width, fraction))
-    )
+    val leftPx = lerp(tabPositions[index].left, tabPositions[next].left, fraction).roundToPx()
+    val widthPx = lerp(tabPositions[index].width, tabPositions[next].width, fraction)
+        .roundToPx()
+        .coerceIn(constraints.minWidth, constraints.maxWidth)
+
+    val placeable = measurable.measure(constraints.copy(minWidth = widthPx, maxWidth = widthPx))
+    val layoutWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else leftPx + placeable.width
+    layout(layoutWidth, placeable.height) {
+        placeable.placeRelative(leftPx, 0)
+    }
 }
 
 /**
@@ -461,7 +490,7 @@ private fun HeaderButton(label: String, enabled: Boolean = true, onClick: () -> 
 /**
  * spec: docs/spec.md 5.6 月送り。
  * タブの外（タイトル行とタブの間）に置き、どちらのタブを見ていても同じ位置で操作できるようにする。
- * 中央のラベルは「2026年9月」のような絶対表記にすると、起算日が 1 日でない場合
+ * 左側のラベルは「2026年9月」のような絶対表記にすると、起算日が 1 日でない場合
  * （例: 8/25-9/24）にどちらの月を指すのか読み手によって解釈が割れるため、
  * 今月からの相対表記にする。正確な日付はサマリタブの「期間:」行で確認できる。
  * ボタンはヘッダの更新・設定と同じ FilledTonalButton で、押せることを背景色で示す。
@@ -541,9 +570,10 @@ private val PERIOD_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("y
 private val DATETIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
 
 /**
- * spec: docs/spec.md 5.6 サマリ。
- * サマリタブの中身。上段（プラン情報）+ 中段「現在の状況」（通話時間・通話金額）。
- * アプリ名はタブの外のヘッダ行に、履歴集計は履歴タブに置く。
+ * spec: docs/spec.md 5.6.1 サマリタブの中身。
+ * 上段「設定値」（プラン情報）+ 中段「現在の状況」（通話時間・通話金額）+ 下段「履歴集計」。
+ * 履歴集計は通話履歴タブ（5.6.2）と同じものを HistorySummary で再掲する。
+ * アプリ名と月送りはタブの外のヘッダ行に置く。
  * 中段は「何を表す数字か」が一目で分かるよう、小さいラベル行と大きい値行のペアで並べる。
  * 表示項目はプラン形式ごとに変わるため、`monthlyFreeSec > 0` のような値の判定ではなく
  * PlanType で分岐する（5.4.2 のとおり両者は 1 対 1 に対応する）。
@@ -677,8 +707,10 @@ private fun BreakdownList(details: List<CallDetail>, settings: Settings, modifie
         }
         return
     }
+    // 並べ替えは details が変わったときだけ。items() に直接渡すと再コンポーズのたびに走る
+    val newestFirst = remember(details) { details.sortedByDescending { it.record.dateMillis } }
     LazyColumn(modifier = modifier.fillMaxWidth()) {
-        items(details.sortedByDescending { it.record.dateMillis }) { detail ->
+        items(newestFirst) { detail ->
             BreakdownRow(detail, settings)
             HorizontalDivider()
         }

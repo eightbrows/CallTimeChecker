@@ -529,6 +529,31 @@ class AppSettingsTest {
         assertEquals(3, migrated.widgetColorOverIndex)
     }
 
+    @Test
+    fun `migration clamps every ranged field so the result is safe on its own`() {
+        // SettingsRepository.load() を経ずに migrate 単体を通しても範囲内になること。
+        // unitSec は calculate() の除数なので、0 が残るとゼロ除算になる
+        val migrated = migrateAppSettings(
+            DEFAULT_APP_SETTINGS.copy(
+                startDay = 40,
+                unitSec = 0,
+                unitPrice = 5000,
+                widgetBgTransparencyStep = 99
+            )
+        )
+        assertEquals(31, migrated.startDay)
+        assertEquals(UNIT_SEC_RANGE.first, migrated.unitSec)
+        assertEquals(999, migrated.unitPrice)
+        assertEquals(WIDGET_BG_TRANSPARENCY_STEP_COUNT - 1, migrated.widgetBgTransparencyStep)
+    }
+
+    @Test
+    fun `the warn threshold needs at least the documented monthly free minutes`() {
+        assertEquals(2, WARN_REMAINING_MIN_MONTHLY_FREE_MIN)
+        assertNull(warnRemainingMinRange(PlanType.MONTHLY, WARN_REMAINING_MIN_MONTHLY_FREE_MIN - 1))
+        assertEquals(1..1, warnRemainingMinRange(PlanType.MONTHLY, WARN_REMAINING_MIN_MONTHLY_FREE_MIN))
+    }
+
     // --- アプリ本体の配色（5.7） ---
 
     @Test

@@ -90,7 +90,7 @@ fun calculate(records: List<CallRecord>, s: Settings): Result {
 /**
  * spec: docs/spec.md 5.6 内訳リストの1件分の判定結果（定額内 / 課金 / 除外 / 未応答）。
  * quotaConsumedSec は Result.quotaConsumedSec の1件分（切り上げ後の枠消費量）で、
- * サマリの「使用」分数と内訳リストを突き合わせられるようにするためのもの。
+ * サマリの「通話時間」と内訳リストを突き合わせられるようにするためのもの。
  */
 data class CallDetail(
     val record: CallRecord,

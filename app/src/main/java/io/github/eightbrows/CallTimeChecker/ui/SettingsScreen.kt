@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,8 +43,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -55,7 +56,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
+
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -68,6 +69,7 @@ import io.github.eightbrows.CallTimeChecker.logic.ThemeMode
 import io.github.eightbrows.CallTimeChecker.logic.clampMonthlyFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
+import io.github.eightbrows.CallTimeChecker.logic.WARN_REMAINING_MIN_MONTHLY_FREE_MIN
 import io.github.eightbrows.CallTimeChecker.logic.WIDGET_BG_TRANSPARENCY_STEP_COUNT
 import io.github.eightbrows.CallTimeChecker.logic.WIDGET_COLOR_PALETTE
 import io.github.eightbrows.CallTimeChecker.logic.WidgetPaletteColor
@@ -90,6 +92,7 @@ import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.themeModeLabel
 import io.github.eightbrows.CallTimeChecker.logic.validateRange
 import io.github.eightbrows.CallTimeChecker.logic.widgetBgTransparencyLabel
+import io.github.eightbrows.CallTimeChecker.logic.widgetPaletteArgb
 import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
@@ -98,9 +101,14 @@ private const val LICENSE_URL =
     "https://github.com/eightbrows/CallTimeChecker/blob/master/LICENSE"
 private const val OFFICIAL_SITE_URL = "https://eightbrows.github.io/"
 
+/** 背景色パレットのダイアログの列数。行数はパレットの色数から決まる */
+private const val PALETTE_COLUMNS = 5
+
 /**
  * spec: docs/spec.md 5.7 設定画面。
- * 全項目を「左:項目名(小さめ)・右:値/コントロール」の統一フォーマットに揃え、
+ * 数値・選択項目は「左:項目名(小さめ)・右:値/コントロール」の統一フォーマットに揃える。
+ * 例外はプラン形式とアプリの配色で、選択肢が横幅を要するため項目名を上に置き、
+ * その下に横幅いっぱいの SegmentedControl を敷く。
  * 区切り線は項目分類が変わる箇所にのみ入れる(①契約内容 ②除外番号 ③ウィジェット表示
  * ④アプリの配色 ⑤権限 ⑥バージョン情報)。
  *
@@ -123,11 +131,11 @@ fun SettingsScreen(
     var perCallFreeMinText by remember { mutableStateOf(current.perCallFreeMin.toString()) }
     var unitSecText by remember { mutableStateOf(current.unitSec.toString()) }
     var unitPriceText by remember { mutableStateOf(current.unitPrice.toString()) }
-    var widgetBgTransparencyStep by remember { mutableStateOf(current.widgetBgTransparencyStep) }
+    var widgetBgTransparencyStep by remember { mutableIntStateOf(current.widgetBgTransparencyStep) }
     var warnRemainingText by remember { mutableStateOf(current.warnRemainingMin.toString()) }
-    var colorNormalIndex by remember { mutableStateOf(current.widgetColorNormalIndex) }
-    var colorWarningIndex by remember { mutableStateOf(current.widgetColorWarningIndex) }
-    var colorOverIndex by remember { mutableStateOf(current.widgetColorOverIndex) }
+    var colorNormalIndex by remember { mutableIntStateOf(current.widgetColorNormalIndex) }
+    var colorWarningIndex by remember { mutableIntStateOf(current.widgetColorWarningIndex) }
+    var colorOverIndex by remember { mutableIntStateOf(current.widgetColorOverIndex) }
     var themeMode by remember { mutableStateOf(current.themeMode) }
     var excludeText by remember { mutableStateOf(excludePrefixesToText(current.excludePrefixes)) }
     var excludeExpanded by remember { mutableStateOf(false) }
@@ -336,8 +344,10 @@ fun SettingsScreen(
                     val v = warnRemainingText.trim().toIntOrNull() ?: 0
                     warnRemainingText = (v + 1).toString()
                 },
+                // 月間定額型で無効になるのは定額枠が WARN_REMAINING_MIN_MONTHLY_FREE_MIN 未満のとき
+                // （定額枠欄が空・0 のときも含む）。特定の分数を決め打ちで書かない
                 disabledNote = if (planType == PlanType.MONTHLY) {
-                    "定額枠が1分のため警告色は使用しない"
+                    "定額枠が${WARN_REMAINING_MIN_MONTHLY_FREE_MIN}分未満のため警告色は使用しない"
                 } else {
                     "${planTypeLabel(planType)}では使用しない"
                 }
@@ -528,8 +538,11 @@ private fun PresetOrCustomRow(
     error: String?
 ) {
     val currentValue = valueText.trim().toIntOrNull()
-    // 初期状態だけは保存値から決める(カスタム値で保存されていれば開いた時点でカスタム選択)
-    var isCustomSelected by rememberSaveable {
+    // 初期状態だけは保存値から決める(カスタム値で保存されていれば開いた時点でカスタム選択)。
+    // 値側(valueText)は呼び出し元が remember で持ち画面回転で current から作り直されるため、
+    // こちらも同じ寿命の remember にそろえる。rememberSaveable にすると回転後に
+    // 「カスタム選択のまま値だけプリセットに戻る」不整合が起きる
+    var isCustomSelected by remember {
         mutableStateOf(currentValue == null || currentValue !in presets)
     }
 
@@ -664,8 +677,10 @@ private enum class WidgetColorRole(val label: String) {
 
 @Composable
 private fun WidgetColorChip(label: String, selectedIndex: Int, onClick: () -> Unit) {
-    val bg = Color(WIDGET_COLOR_PALETTE[selectedIndex].argb)
-    val textColor = Color(widgetTextColorOn(WIDGET_COLOR_PALETTE[selectedIndex].argb))
+    // 直接添字を引かず widgetPaletteArgb() を通す。範囲外の添字でも例外にならない
+    val argb = widgetPaletteArgb(selectedIndex)
+    val bg = Color(argb)
+    val textColor = Color(widgetTextColorOn(argb))
     Box(
         modifier = Modifier
             .background(bg, RoundedCornerShape(4.dp))
@@ -677,7 +692,7 @@ private fun WidgetColorChip(label: String, selectedIndex: Int, onClick: () -> Un
     }
 }
 
-/** 背景色パレット。10色を5列2行で表示する */
+/** 背景色パレット。PALETTE_COLUMNS 列で折り返して並べる（10 色なら 5 列 2 行） */
 @Composable
 private fun WidgetColorPickerDialog(
     role: WidgetColorRole,
@@ -690,10 +705,10 @@ private fun WidgetColorPickerDialog(
         title = { Text("${role.label}色を選ぶ") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                WIDGET_COLOR_PALETTE.chunked(5).forEachIndexed { row, colors ->
+                WIDGET_COLOR_PALETTE.chunked(PALETTE_COLUMNS).forEachIndexed { row, colors ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         colors.forEachIndexed { column, palette ->
-                            val index = row * 5 + column
+                            val index = row * PALETTE_COLUMNS + column
                             WidgetColorSwatch(
                                 palette = palette,
                                 selected = index == selectedIndex,

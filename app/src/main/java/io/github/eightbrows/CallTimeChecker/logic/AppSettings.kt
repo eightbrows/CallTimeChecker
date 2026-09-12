@@ -21,7 +21,7 @@ enum class ThemeMode(val prefsValue: String) {
     DARK("dark")
 }
 
-/** spec: docs/spec.md 5.7 配色の表示名（設定画面のラジオ） */
+/** spec: docs/spec.md 5.7 配色の表示名（設定画面の SegmentedControl） */
 fun themeModeLabel(mode: ThemeMode): String = when (mode) {
     ThemeMode.SYSTEM -> "システムに従う"
     ThemeMode.LIGHT -> "ライト"
@@ -119,6 +119,10 @@ fun derivePlanType(monthlyFreeMin: Int, perCallFreeMin: Int): PlanType = when {
  *
  * のどちらもこれ 1 つで賄える。月間定額型の定額枠は 1 分以上（5.7）であるため、
  * 矛盾した値をそのまま読み込むと設定画面が開いた直後に保存不可になってしまう。
+ *
+ * 範囲を持つ項目（起算日・課金単位・単位金額・透過率・警告しきい値・色の添字）はここで
+ * すべて clamp し、この関数を通した AppSettings は単体で範囲内であることを保証する。
+ * 特に unitSec は calculate() の除数（5.4.3）なので、0 を通すとゼロ除算になる。
  */
 fun migrateAppSettings(settings: AppSettings): AppSettings {
     val planType = derivePlanType(settings.monthlyFreeMin, settings.perCallFreeMin)
@@ -132,6 +136,10 @@ fun migrateAppSettings(settings: AppSettings): AppSettings {
         effective.warnRemainingMin
     }
     return effective.copy(
+        startDay = clampStartDay(effective.startDay),
+        unitSec = clampUnitSec(effective.unitSec),
+        unitPrice = clampUnitPrice(effective.unitPrice),
+        widgetBgTransparencyStep = clampWidgetBgTransparencyStep(effective.widgetBgTransparencyStep),
         warnRemainingMin = warn,
         widgetColorNormalIndex = clampWidgetColorIndex(effective.widgetColorNormalIndex),
         widgetColorWarningIndex = clampWidgetColorIndex(effective.widgetColorWarningIndex),
@@ -187,12 +195,24 @@ fun widgetBgTransparencyLabel(step: Int): String {
 }
 
 /**
+ * spec: docs/spec.md 5.7 警告しきい値（残り時間）が意味を持つ定額枠の下限（分）。
+ * 範囲は 1〜(定額枠 − 1) なので、定額枠がこれ未満だと範囲が空になる。
+ * 設定画面の「使用しない」注記もこの値を参照する。
+ */
+const val WARN_REMAINING_MIN_MONTHLY_FREE_MIN = 2
+
+/**
  * spec: docs/spec.md 5.7 警告しきい値（残り時間）の入力範囲。月間定額型のときだけ入力でき、
  * 上限は「定額枠 − 1」。残りが定額枠と同じ値、つまり消費 0 分で既に警告色になるのは無意味なため。
- * 定額枠が 1 分だと範囲が空になるので、その場合も入力対象外（null）とし、警告色を使わない。
+ * 定額枠が WARN_REMAINING_MIN_MONTHLY_FREE_MIN 未満だと範囲が空になるので、
+ * その場合も入力対象外（null）とし、警告色を使わない。
  */
 fun warnRemainingMinRange(planType: PlanType, monthlyFreeMin: Int): IntRange? =
-    if (planType == PlanType.MONTHLY && monthlyFreeMin >= 2) 1..(monthlyFreeMin - 1) else null
+    if (planType == PlanType.MONTHLY && monthlyFreeMin >= WARN_REMAINING_MIN_MONTHLY_FREE_MIN) {
+        1..(monthlyFreeMin - 1)
+    } else {
+        null
+    }
 
 /**
  * spec: docs/spec.md 5.7 警告しきい値（残り時間）の既定値。定額枠の 20%（切り捨て）とする。
@@ -257,7 +277,7 @@ fun validateRange(text: String, min: Int, max: Int): String? {
 fun validateRange(text: String, range: IntRange?): String? =
     if (range == null) null else validateRange(text, range.first, range.last)
 
-/** spec: docs/spec.md 5.7 プラン形式の表示名。設定画面のラジオとメイン画面の表示で共用する */
+/** spec: docs/spec.md 5.7 プラン形式の表示名。設定画面の SegmentedControl とメイン画面の表示で共用する */
 fun planTypeLabel(planType: PlanType): String = when (planType) {
     PlanType.MONTHLY -> "月間定額型"
     PlanType.PER_CALL -> "1通話定額型"

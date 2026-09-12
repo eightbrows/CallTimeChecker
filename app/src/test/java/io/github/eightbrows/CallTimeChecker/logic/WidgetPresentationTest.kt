@@ -463,7 +463,7 @@ class WidgetPresentationTest {
 
     @Test
     fun `widget color palette keeps the default colors at their documented indices`() {
-        assertEquals(8, WIDGET_COLOR_PALETTE.size)
+        assertEquals(10, WIDGET_COLOR_PALETTE.size)
         assertEquals(0xFFFFFFFF.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_WHITE].argb)
         assertEquals(0xFFFFA000.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_ORANGE].argb)
         assertEquals(0xFFD32F2F.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_RED].argb)

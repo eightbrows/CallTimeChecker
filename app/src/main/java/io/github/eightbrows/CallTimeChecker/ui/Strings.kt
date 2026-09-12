@@ -40,15 +40,17 @@ fun ThemeMode.labelRes(): Int = when (this) {
 @StringRes
 fun WidgetPaletteName.labelRes(): Int = when (this) {
     WidgetPaletteName.WHITE -> R.string.palette_white
-    WidgetPaletteName.PINK -> R.string.palette_pink
-    WidgetPaletteName.PURPLE -> R.string.palette_purple
-    WidgetPaletteName.BLUE -> R.string.palette_blue
-    WidgetPaletteName.GREEN -> R.string.palette_green
-    WidgetPaletteName.YELLOW -> R.string.palette_yellow
-    WidgetPaletteName.ORANGE -> R.string.palette_orange
-    WidgetPaletteName.RED -> R.string.palette_red
-    WidgetPaletteName.BLACK -> R.string.palette_black
     WidgetPaletteName.TEAL -> R.string.palette_teal
+    WidgetPaletteName.BLUE -> R.string.palette_blue
+    WidgetPaletteName.INDIGO -> R.string.palette_indigo
+    WidgetPaletteName.PURPLE -> R.string.palette_purple
+    WidgetPaletteName.PINK -> R.string.palette_pink
+    WidgetPaletteName.RED -> R.string.palette_red
+    WidgetPaletteName.ORANGE -> R.string.palette_orange
+    WidgetPaletteName.YELLOW -> R.string.palette_yellow
+    WidgetPaletteName.OLIVE -> R.string.palette_olive
+    WidgetPaletteName.GREEN -> R.string.palette_green
+    WidgetPaletteName.BLACK -> R.string.palette_black
 }
 
 /** spec: docs/spec.md 5.7 入力欄の検証結果 → 表示メッセージ */

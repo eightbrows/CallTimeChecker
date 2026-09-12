@@ -495,10 +495,27 @@ class WidgetPresentationTest {
 
     @Test
     fun `widget color palette keeps the default colors at their documented indices`() {
-        assertEquals(10, WIDGET_COLOR_PALETTE.size)
+        assertEquals(12, WIDGET_COLOR_PALETTE.size)
+        assertEquals(WidgetPaletteName.WHITE, WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_WHITE].name)
+        assertEquals(WidgetPaletteName.ORANGE, WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_ORANGE].name)
+        assertEquals(WidgetPaletteName.RED, WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_RED].name)
         assertEquals(0xFFFFFFFF.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_WHITE].argb)
-        assertEquals(0xFFFFA000.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_ORANGE].argb)
-        assertEquals(0xFFD32F2F.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_RED].argb)
+        assertEquals(0xFFFF5722.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_ORANGE].argb)
+        assertEquals(0xFFFF0000.toInt(), WIDGET_COLOR_PALETTE[WIDGET_COLOR_INDEX_RED].argb)
+    }
+
+    @Test
+    fun `widget color palette is the documented 12 colors in order`() {
+        // spec 5.7 の一覧そのもの。並び順が保存値の意味なので、順序ごと固定する
+        val expected = listOf(
+            WidgetPaletteName.WHITE to 0xFFFFFFFF, WidgetPaletteName.TEAL to 0xFF26C6DA,
+            WidgetPaletteName.BLUE to 0xFF0000FF, WidgetPaletteName.INDIGO to 0xFF3F51B5,
+            WidgetPaletteName.PURPLE to 0xFF7B1FA2, WidgetPaletteName.PINK to 0xFFE91E63,
+            WidgetPaletteName.RED to 0xFFFF0000, WidgetPaletteName.ORANGE to 0xFFFF5722,
+            WidgetPaletteName.YELLOW to 0xFFFBC02D, WidgetPaletteName.OLIVE to 0xFF6B6E1E,
+            WidgetPaletteName.GREEN to 0xFF388E3C, WidgetPaletteName.BLACK to 0xFF000000
+        ).map { (name, argb) -> WidgetPaletteColor(name, argb.toInt()) }
+        assertEquals(expected, WIDGET_COLOR_PALETTE)
     }
 
     @Test
@@ -548,7 +565,8 @@ class WidgetPresentationTest {
 
     @Test
     fun `every palette color gets a readable text color`() {
-        // WCAG のコントラスト比 4.5 以上（通常の本文テキストの基準）を全色で満たす
+        // WCAG のコントラスト比 4.5 以上（通常の本文テキストの基準）を 12 色すべてで満たす
+        assertEquals(12, WIDGET_COLOR_PALETTE.size)
         for (color in WIDGET_COLOR_PALETTE) {
             val text = widgetTextColorOn(color.argb)
             assertEquals(true, contrastRatio(color.argb, text) >= 4.5)
@@ -598,9 +616,14 @@ class WidgetPresentationTest {
     }
 
     @Test
-    fun `the auto update mark is a single language neutral symbol`() {
-        // Provider がラベル文字列に添える記号。言語リソースには入れず 1 箇所で持つ
-        assertEquals("⌚", WIDGET_AUTO_UPDATE_MARK)
+    fun `the auto update mark is a single monochrome symbol, not an emoji`() {
+        // Provider がラベル文字列に添える記号。言語リソースには入れず 1 箇所で持つ。
+        // カラー絵文字は Android 9 のランチャーで RemoteViews の適用に失敗するため使わない
+        assertEquals(1, WIDGET_AUTO_UPDATE_MARK.length)
+        val cp = WIDGET_AUTO_UPDATE_MARK.codePointAt(0)
+        assertEquals(false, cp in 0x2300..0x23FF)   // Miscellaneous Technical（⌚ ⏰ など時計の絵文字）
+        assertEquals(false, cp in 0x1F000..0x1FFFF) // Supplementary 絵文字ブロック
+        assertEquals("↻", WIDGET_AUTO_UPDATE_MARK)
     }
 
     private fun contrastRatio(a: Int, b: Int): Double {

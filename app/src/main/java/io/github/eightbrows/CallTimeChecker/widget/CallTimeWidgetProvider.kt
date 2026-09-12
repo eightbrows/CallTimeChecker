@@ -297,6 +297,7 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             if (remaining > 0) delay(remaining)
         }
 
+
         for (id in appWidgetIds) {
             appWidgetManager.updateAppWidget(id, views)
         }

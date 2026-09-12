@@ -123,15 +123,17 @@
     <string name="color_role_over">Over</string>
     <string name="dialog_pick_color">Choose %1$s color</string>
     <string name="palette_white">White</string>
-    <string name="palette_pink">Pink</string>
-    <string name="palette_purple">Purple</string>
-    <string name="palette_blue">Blue</string>
-    <string name="palette_green">Green</string>
-    <string name="palette_yellow">Yellow</string>
-    <string name="palette_orange">Orange</string>
-    <string name="palette_red">Red</string>
-    <string name="palette_black">Black</string>
     <string name="palette_teal">Teal</string>
+    <string name="palette_blue">Blue</string>
+    <string name="palette_indigo">Indigo</string>
+    <string name="palette_purple">Purple</string>
+    <string name="palette_pink">Pink</string>
+    <string name="palette_red">Red</string>
+    <string name="palette_orange">Orange</string>
+    <string name="palette_yellow">Yellow</string>
+    <string name="palette_olive">Olive</string>
+    <string name="palette_green">Green</string>
+    <string name="palette_black">Black</string>
     <string name="about_version">Version</string>
     <string name="about_license">License</string>
     <string name="about_license_value" translatable="false">Apache License 2.0 ↗</string>

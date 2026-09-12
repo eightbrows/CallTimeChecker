@@ -103,8 +103,11 @@ private const val LICENSE_URL =
     "https://github.com/eightbrows/CallTimeChecker/blob/master/LICENSE"
 private const val OFFICIAL_SITE_URL = "https://eightbrows.github.io/"
 
-/** 背景色パレットのダイアログの列数。行数はパレットの色数から決まる */
-private const val PALETTE_COLUMNS = 5
+/**
+ * 背景色パレットのダイアログの列数。行数はパレットの色数から決まる（12 色なら 4 列 3 行ちょうど）。
+ * 5 列だと 1 セルが狭く色名が「ホワイ…」のように省略されたため 4 列にした。
+ */
+private const val PALETTE_COLUMNS = 4
 
 /**
  * spec: docs/spec.md 5.7 設定画面。
@@ -727,7 +730,7 @@ private fun WidgetColorChip(label: String, selectedIndex: Int, onClick: () -> Un
     }
 }
 
-/** 背景色パレット。PALETTE_COLUMNS 列で折り返して並べる（10 色なら 5 列 2 行） */
+/** 背景色パレット。PALETTE_COLUMNS 列で折り返して並べる（12 色なら 4 列 3 行） */
 @Composable
 private fun WidgetColorPickerDialog(
     role: WidgetColorRole,

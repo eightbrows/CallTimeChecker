@@ -56,8 +56,13 @@ const val WIDGET_AMOUNT_REFERENCE = "000"
  * spec: docs/spec.md 5.5.1 直近の再描画が 30 分周期の自動更新（onUpdate）だったことを示す印。
  * 表示中の数字がタップした瞬間のものか、周期更新で入れ替わったものかを見分けるためのもの。
  * 手動更新・設定変更による再描画では付けない。
+ *
+ * カラー絵文字（⌚ U+231A など）は使わない。Android 9 のランチャーでは、絵文字を含む
+ * テキストを持つ RemoteViews の適用に失敗して「Problem loading widget」になる
+ * （自プロセスでの apply は成功するため、ホスト側の絵文字フォント処理に起因する）。
+ * 単色の記号フォント（Noto Sans Symbols）で描ける文字にする。
  */
-const val WIDGET_AUTO_UPDATE_MARK = "⌚"
+const val WIDGET_AUTO_UPDATE_MARK = "↻"
 
 /**
  * spec: docs/spec.md 5.5.1 ウィジェット表示内容。
@@ -191,34 +196,38 @@ fun withAlpha(colorArgb: Int, alpha: Int): Int =
     (alpha shl 24) or (colorArgb and 0x00FFFFFF)
 
 /** spec: docs/spec.md 5.7 / 5.8 パレットの色名。表示名はこの種類から UI 側でリソースに解決する */
-enum class WidgetPaletteName { WHITE, PINK, PURPLE, BLUE, GREEN, YELLOW, ORANGE, RED, BLACK, TEAL }
+enum class WidgetPaletteName {
+    WHITE, TEAL, BLUE, INDIGO, PURPLE, PINK, RED, ORANGE, YELLOW, OLIVE, GREEN, BLACK
+}
 
 /** spec: docs/spec.md 5.7 ウィジェット背景色のプリセット 1 色分 */
 data class WidgetPaletteColor(val name: WidgetPaletteName, val argb: Int)
 
 /**
- * spec: docs/spec.md 5.5.3 / 5.7 ウィジェット背景色のプリセットパレット。
+ * spec: docs/spec.md 5.5.3 / 5.7 ウィジェット背景色のプリセットパレット（12 色）。
  * 保存するのは ARGB ではなくこのリストの添字。色の実体をここ 1 箇所に閉じ込めるため。
  * 並び順が保存値の意味そのものになるので、色を入れ替えるときは位置を保つ。
- * ライトグレー / ダークグレーをピンク / パープルに差し替えた際も、他の色の添字が
- * ずれないよう同じ位置に置いた（削除した 2 色を指していた保存値だけが別の色になる）。
+ * 全色が黒か白の文字色でコントラスト比 4.5 以上を満たすことはユニットテストで担保する（5.5.3）。
  */
 val WIDGET_COLOR_PALETTE = listOf(
     WidgetPaletteColor(WidgetPaletteName.WHITE, 0xFFFFFFFF.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.PINK, 0xFFE91E63.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.TEAL, 0xFF26C6DA.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.BLUE, 0xFF0000FF.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.INDIGO, 0xFF3F51B5.toInt()),
     WidgetPaletteColor(WidgetPaletteName.PURPLE, 0xFF7B1FA2.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.BLUE, 0xFF1976D2.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.GREEN, 0xFF388E3C.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.PINK, 0xFFE91E63.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.RED, 0xFFFF0000.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.ORANGE, 0xFFFF5722.toInt()),
     WidgetPaletteColor(WidgetPaletteName.YELLOW, 0xFFFBC02D.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.ORANGE, 0xFFFFA000.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.RED, 0xFFD32F2F.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.BLACK, 0xFF000000.toInt()),
-    WidgetPaletteColor(WidgetPaletteName.TEAL, 0xFF26C6DA.toInt())
+    WidgetPaletteColor(WidgetPaletteName.OLIVE, 0xFF6B6E1E.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.GREEN, 0xFF388E3C.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.BLACK, 0xFF000000.toInt())
 )
 
+/** spec: docs/spec.md 5.7 初期値（通常色 / 警告色 / 超過色）が指すパレット添字 */
 const val WIDGET_COLOR_INDEX_WHITE = 0
-const val WIDGET_COLOR_INDEX_ORANGE = 6
-const val WIDGET_COLOR_INDEX_RED = 7
+const val WIDGET_COLOR_INDEX_ORANGE = 7
+const val WIDGET_COLOR_INDEX_RED = 6
 
 /** パレット添字 → 不透明な ARGB。範囲外の添字は先頭色に倒す */
 fun widgetPaletteArgb(index: Int): Int =

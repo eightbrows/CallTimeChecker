@@ -21,12 +21,6 @@ enum class ThemeMode(val prefsValue: String) {
     DARK("dark")
 }
 
-/** spec: docs/spec.md 5.7 配色の表示名（設定画面の SegmentedControl） */
-fun themeModeLabel(mode: ThemeMode): String = when (mode) {
-    ThemeMode.SYSTEM -> "システムに従う"
-    ThemeMode.LIGHT -> "ライト"
-    ThemeMode.DARK -> "ダーク"
-}
 
 /** 保存値（prefsValue）→ ThemeMode。未保存・未知の値はいずれも既定の「システムに従う」に倒す */
 fun themeModeFromPrefsValue(value: String?): ThemeMode =
@@ -230,11 +224,6 @@ fun clampWarnRemainingMin(min: Int, monthlyFreeMin: Int): Int {
     return min.coerceIn(range.first, range.last)
 }
 
-/**
- * spec: docs/spec.md 5.7 警告しきい値の表示（`残り14分`）。
- * 残量そのものが設定値なので、定額枠に対する割合は併記しない。
- */
-fun warnRemainingLabel(warnRemainingMin: Int): String = "残り${warnRemainingMin}分"
 
 /** spec: docs/spec.md 5.7 ウィジェット背景色のパレット添字は 0〜(パレット長 − 1) */
 fun clampWidgetColorIndex(index: Int): Int = index.coerceIn(0, WIDGET_COLOR_PALETTE.lastIndex)
@@ -265,35 +254,48 @@ fun perCallFreeMinRange(planType: PlanType): IntRange? =
     if (planType == PlanType.PER_CALL) 1..180 else null
 
 /**
- * spec: docs/spec.md 5.7 入力欄の範囲チェック。範囲外・空欄・非数値ならエラーメッセージ、正常なら null。
- * 入力そのものは制限せず（編集途中の中間状態を壊さないため）、エラーがある間は保存ボタンを無効化する。
+ * spec: docs/spec.md 5.7 / 5.8 入力欄の検証結果。この層は Context を持てないため
+ * メッセージ文字列ではなく種類を返し、表示文言は UI 側でリソースに解決する。
  */
-fun validateRange(text: String, min: Int, max: Int): String? {
-    val value = text.trim().toIntOrNull() ?: return "数値を入力してください"
-    return if (value in min..max) null else "$min〜$max の範囲で入力してください"
-}
-
-/** 入力対象外（0 固定）の欄は検証しない。範囲が null のときは常に null を返す */
-fun validateRange(text: String, range: IntRange?): String? =
-    if (range == null) null else validateRange(text, range.first, range.last)
-
-/** spec: docs/spec.md 5.7 プラン形式の表示名。設定画面の SegmentedControl とメイン画面の表示で共用する */
-fun planTypeLabel(planType: PlanType): String = when (planType) {
-    PlanType.MONTHLY -> "月間定額型"
-    PlanType.PER_CALL -> "1通話定額型"
-    PlanType.PAY_AS_YOU_GO -> "従量課金"
+sealed interface InputError {
+    /** 空欄・非数値・Int に収まらない桁数 */
+    data object NotANumber : InputError
+    /** 数値だが min〜max の外 */
+    data class OutOfRange(val min: Int, val max: Int) : InputError
 }
 
 /**
- * spec: docs/spec.md 5.7 除外番号リストの折りたたみ表示用。
- * 閉じている状態で中身の見当がつくよう、先頭 3 件と残り件数を 1 行にまとめる。
+ * spec: docs/spec.md 5.7 入力欄の範囲チェック。範囲外・空欄・非数値なら InputError、正常なら null。
+ * 入力そのものは制限せず（編集途中の中間状態を壊さないため）、エラーがある間は保存ボタンを無効化する。
  */
-fun excludePrefixesPreview(prefixes: List<String>): String {
-    if (prefixes.isEmpty()) return "（なし）"
-    val head = prefixes.take(3).joinToString(", ")
-    val rest = prefixes.size - 3
-    return if (rest > 0) "$head ほか${rest}件" else head
+fun validateRange(text: String, min: Int, max: Int): InputError? {
+    val value = text.trim().toIntOrNull() ?: return InputError.NotANumber
+    return if (value in min..max) null else InputError.OutOfRange(min, max)
 }
+
+/** 入力対象外（0 固定）の欄は検証しない。範囲が null のときは常に null を返す */
+fun validateRange(text: String, range: IntRange?): InputError? =
+    if (range == null) null else validateRange(text, range.first, range.last)
+
+/** spec: docs/spec.md 5.7 除外番号リストの折りたたみ表示で見せる先頭件数 */
+const val EXCLUDE_PREVIEW_HEAD_COUNT = 3
+
+/**
+ * spec: docs/spec.md 5.7 / 5.8 除外番号リストの折りたたみ表示用の要約。
+ * head は先頭 EXCLUDE_PREVIEW_HEAD_COUNT 件、rest は残り件数（0 なら「ほか N 件」を出さない）。
+ * 「ほか N 件」「（なし）」の文言は UI 側でリソースから付ける。
+ */
+data class ExcludePrefixesPreview(val head: List<String>, val rest: Int)
+
+/**
+ * spec: docs/spec.md 5.7 除外番号リストの折りたたみ表示用。
+ * 閉じている状態で中身の見当がつくよう、先頭 3 件と残り件数に分ける。
+ */
+fun excludePrefixesPreview(prefixes: List<String>): ExcludePrefixesPreview =
+    ExcludePrefixesPreview(
+        head = prefixes.take(EXCLUDE_PREVIEW_HEAD_COUNT),
+        rest = (prefixes.size - EXCLUDE_PREVIEW_HEAD_COUNT).coerceAtLeast(0)
+    )
 
 /** spec: docs/spec.md 5.7 除外番号リスト（改行区切りテキスト）→ プレフィックスのリスト */
 fun parseExcludePrefixes(text: String): List<String> =

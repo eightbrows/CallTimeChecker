@@ -6,14 +6,24 @@ import java.util.Locale
 enum class WidgetColor { NORMAL, WARNING, OVER }
 
 /**
+ * spec: docs/spec.md 5.5.1 / 5.8 ウィジェットの 1 項目のラベルの種類。
+ * この層は Context を持てないため文字列は返さず、Provider 側でリソースに解決する。
+ */
+enum class WidgetLabelKind { CALL_TIME, FREE_QUOTA, CALL_AMOUNT }
+
+/** spec: docs/spec.md 5.5.1 / 5.8 数字に付ける単位の種類。位置（前後）も Provider 側で言語ごとに決める */
+enum class WidgetUnit { MINUTES, YEN }
+
+/**
  * spec: docs/spec.md 5.5.1 ウィジェットの 1 項目。
  * 「ラベル（小）+ 数字（大）+ 単位（小）」を 1 つの TextView にまとめ、
  * 大きさの差はスパンで付けて描画するため、大きさの違う 3 つの部品として持つ。
+ * ラベルと単位は種類（enum）で持ち、文字列への解決は Provider が行う（5.8）。
  */
 data class WidgetLine(
-    val label: String,
+    val label: WidgetLabelKind,
     val value: String,
-    val unit: String,
+    val unit: WidgetUnit,
     /**
      * spec: docs/spec.md 5.5.1 文字サイズをそろえる基準となる数字部分。
      * autoSize は行ごとに自分のテキストの幅からサイズを決めるため、これが無いと
@@ -23,7 +33,13 @@ data class WidgetLine(
      * 基準より長い場合は埋めないので、その行だけ autoSize が縮小する。
      * null は基準無し（その行だけの autoSize に任せる）。
      */
-    val reference: String? = null
+    val reference: String? = null,
+    /**
+     * spec: docs/spec.md 5.5.1 自動更新の印（WIDGET_AUTO_UPDATE_MARK）をラベルに添えるか。
+     * 印はラベルの一部として扱い、数字の側には触れない（基準文字列による桁そろえに影響させないため）。
+     * 「通話金額」の行かつ onUpdate 経由の再描画のときだけ true になる。
+     */
+    val marked: Boolean = false
 )
 
 /**
@@ -36,9 +52,6 @@ const val WIDGET_TIME_REFERENCE = "00.0"
 /** spec: docs/spec.md 5.5.1 「通話金額」の基準文字列。3 プラン共通で 3 桁 */
 const val WIDGET_AMOUNT_REFERENCE = "000"
 
-/** spec: docs/spec.md 5.5.1 「通話金額」のラベル */
-private const val WIDGET_AMOUNT_LABEL = "通話金額"
-
 /**
  * spec: docs/spec.md 5.5.1 直近の再描画が 30 分周期の自動更新（onUpdate）だったことを示す印。
  * 表示中の数字がタップした瞬間のものか、周期更新で入れ替わったものかを見分けるためのもの。
@@ -49,8 +62,8 @@ const val WIDGET_AUTO_UPDATE_MARK = "⌚"
 /**
  * spec: docs/spec.md 5.5.1 ウィジェット表示内容。
  * 上段（3/5）は通話時間と無料枠、下段（2/5）は通話金額。
- * ラベルも数字もプラン形式によって変わるため、文字列の組み立てはすべてここで行い、
- * Provider 側はビューへの割り当てだけを行う。
+ * 項目の有無・数字・ラベルの種類はプラン形式によって変わるため、その決定はすべてここで行い、
+ * Provider 側は種類を文字列リソースに解決してビューへ割り当てるだけにする。
  */
 data class WidgetContent(
     /** 上段 1 項目目。全プラン共通の「通話時間」 */
@@ -93,10 +106,11 @@ fun presentWidget(
     autoUpdated: Boolean = false
 ): WidgetContent {
     val amountLine = WidgetLine(
-        label = if (autoUpdated) "$WIDGET_AMOUNT_LABEL $WIDGET_AUTO_UPDATE_MARK" else WIDGET_AMOUNT_LABEL,
+        label = WidgetLabelKind.CALL_AMOUNT,
         value = formatAmount(result.amount),
-        unit = "円",
-        reference = WIDGET_AMOUNT_REFERENCE
+        unit = WidgetUnit.YEN,
+        reference = WIDGET_AMOUNT_REFERENCE,
+        marked = autoUpdated
     )
     val consumedMinutes = formatMinutes(result.quotaConsumedSec)
 
@@ -122,11 +136,11 @@ fun presentWidget(
                 // 整数部が 1 桁違うだけで autoSize が選ぶサイズが 2 割以上変わってしまうため
                 // （1x2 の実機で cap 高 37px と 29px）。ラベルは数字行より短いので桁埋め不要
                 timeLine = WidgetLine(
-                    label = "通話時間", value = consumedMinutes, unit = "分",
+                    label = WidgetLabelKind.CALL_TIME, value = consumedMinutes, unit = WidgetUnit.MINUTES,
                     reference = WIDGET_TIME_REFERENCE
                 ),
                 quotaLine = WidgetLine(
-                    label = "無料枠", value = formatMinutes(remainingSec), unit = "分",
+                    label = WidgetLabelKind.FREE_QUOTA, value = formatMinutes(remainingSec), unit = WidgetUnit.MINUTES,
                     reference = WIDGET_TIME_REFERENCE
                 ),
                 amountLine = amountLine,
@@ -138,7 +152,7 @@ fun presentWidget(
         PlanType.PER_CALL -> WidgetContent(
             // 上段 1 行構成の 2 プランは、同じ位置に同じ項目が出るので幅をそろえる
             timeLine = WidgetLine(
-                label = "通話時間", value = consumedMinutes, unit = "分",
+                label = WidgetLabelKind.CALL_TIME, value = consumedMinutes, unit = WidgetUnit.MINUTES,
                 reference = WIDGET_TIME_REFERENCE
             ),
             // 月間の無料枠が無いプラン形式では「無料枠」の項目自体を出さない
@@ -149,7 +163,7 @@ fun presentWidget(
         // 従量課金: 無料枠が無く「超過」という概念自体が無いため、金額が出ていても常に通常色
         PlanType.PAY_AS_YOU_GO -> WidgetContent(
             timeLine = WidgetLine(
-                label = "通話時間", value = consumedMinutes, unit = "分",
+                label = WidgetLabelKind.CALL_TIME, value = consumedMinutes, unit = WidgetUnit.MINUTES,
                 reference = WIDGET_TIME_REFERENCE
             ),
             quotaLine = null,
@@ -176,8 +190,11 @@ fun widgetBgAlpha(step: Int): Int = 255 * (WIDGET_BG_TRANSPARENCY_STEP_COUNT - 1
 fun withAlpha(colorArgb: Int, alpha: Int): Int =
     (alpha shl 24) or (colorArgb and 0x00FFFFFF)
 
+/** spec: docs/spec.md 5.7 / 5.8 パレットの色名。表示名はこの種類から UI 側でリソースに解決する */
+enum class WidgetPaletteName { WHITE, PINK, PURPLE, BLUE, GREEN, YELLOW, ORANGE, RED, BLACK, TEAL }
+
 /** spec: docs/spec.md 5.7 ウィジェット背景色のプリセット 1 色分 */
-data class WidgetPaletteColor(val label: String, val argb: Int)
+data class WidgetPaletteColor(val name: WidgetPaletteName, val argb: Int)
 
 /**
  * spec: docs/spec.md 5.5.3 / 5.7 ウィジェット背景色のプリセットパレット。
@@ -187,16 +204,16 @@ data class WidgetPaletteColor(val label: String, val argb: Int)
  * ずれないよう同じ位置に置いた（削除した 2 色を指していた保存値だけが別の色になる）。
  */
 val WIDGET_COLOR_PALETTE = listOf(
-    WidgetPaletteColor("ホワイト", 0xFFFFFFFF.toInt()),
-    WidgetPaletteColor("ピンク", 0xFFE91E63.toInt()),
-    WidgetPaletteColor("パープル", 0xFF7B1FA2.toInt()),
-    WidgetPaletteColor("ブルー", 0xFF1976D2.toInt()),
-    WidgetPaletteColor("グリーン", 0xFF388E3C.toInt()),
-    WidgetPaletteColor("イエロー", 0xFFFBC02D.toInt()),
-    WidgetPaletteColor("オレンジ", 0xFFFFA000.toInt()),
-    WidgetPaletteColor("レッド", 0xFFD32F2F.toInt()),
-    WidgetPaletteColor("ブラック", 0xFF000000.toInt()),
-    WidgetPaletteColor("ティール", 0xFF26C6DA.toInt())
+    WidgetPaletteColor(WidgetPaletteName.WHITE, 0xFFFFFFFF.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.PINK, 0xFFE91E63.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.PURPLE, 0xFF7B1FA2.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.BLUE, 0xFF1976D2.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.GREEN, 0xFF388E3C.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.YELLOW, 0xFFFBC02D.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.ORANGE, 0xFFFFA000.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.RED, 0xFFD32F2F.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.BLACK, 0xFF000000.toInt()),
+    WidgetPaletteColor(WidgetPaletteName.TEAL, 0xFF26C6DA.toInt())
 )
 
 const val WIDGET_COLOR_INDEX_WHITE = 0

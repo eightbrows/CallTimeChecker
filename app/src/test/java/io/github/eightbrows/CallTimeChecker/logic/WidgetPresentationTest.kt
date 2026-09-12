@@ -63,9 +63,18 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 70 * 60),
             PlanType.MONTHLY
         )
-        assertEquals(WidgetLine("通話時間", "42.0", "分", WIDGET_TIME_REFERENCE), content.timeLine)
-        assertEquals(WidgetLine("無料枠", "28.0", "分", WIDGET_TIME_REFERENCE), content.quotaLine)
-        assertEquals(WidgetLine("通話金額", "0", "円", WIDGET_AMOUNT_REFERENCE), content.amountLine)
+        assertEquals(
+            WidgetLine(WidgetLabelKind.CALL_TIME, "42.0", WidgetUnit.MINUTES, WIDGET_TIME_REFERENCE),
+            content.timeLine
+        )
+        assertEquals(
+            WidgetLine(WidgetLabelKind.FREE_QUOTA, "28.0", WidgetUnit.MINUTES, WIDGET_TIME_REFERENCE),
+            content.quotaLine
+        )
+        assertEquals(
+            WidgetLine(WidgetLabelKind.CALL_AMOUNT, "0", WidgetUnit.YEN, WIDGET_AMOUNT_REFERENCE),
+            content.amountLine
+        )
     }
 
     @Test
@@ -88,13 +97,13 @@ class WidgetPresentationTest {
             result(countedSec = 42 * 60, amount = 220), settings(70 * 60), PlanType.MONTHLY
         )
         for (line in listOfNotNull(content.timeLine, content.quotaLine, content.amountLine)) {
-            assertEquals(true, line.label.isNotBlank())
             assertEquals(true, line.value.isNotBlank())
         }
-        // 単位は数字と同じ TextView に小さく描くため、数字とは別に持つ
-        assertEquals("分", content.timeLine.unit)
-        assertEquals("分", content.quotaLine?.unit)
-        assertEquals("円", content.amountLine.unit)
+        // 単位は数字と同じ TextView に小さく描くため、数字とは別に「種類」で持つ（5.8）。
+        // 文字列（分 / min、円 / ¥）への解決は Provider 側
+        assertEquals(WidgetUnit.MINUTES, content.timeLine.unit)
+        assertEquals(WidgetUnit.MINUTES, content.quotaLine?.unit)
+        assertEquals(WidgetUnit.YEN, content.amountLine.unit)
     }
 
     @Test
@@ -102,7 +111,21 @@ class WidgetPresentationTest {
         for (planType in listOf(PlanType.PER_CALL, PlanType.PAY_AS_YOU_GO)) {
             val content = presentWidget(result(countedSec = 60, amount = 0), settings(0), planType)
             assertEquals(null, content.quotaLine)
-            assertEquals("通話時間", content.timeLine.label)
+            assertEquals(WidgetLabelKind.CALL_TIME, content.timeLine.label)
+        }
+    }
+
+    @Test
+    fun `label kinds are fixed per row so the provider can resolve them to any language`() {
+        // どのプラン形式でも、上段 1 行目は通話時間、下段は通話金額。無料枠は月間定額型だけ
+        for (plan in PlanType.entries) {
+            val content = presentWidget(result(20 * 60, 100), settings(70 * 60), plan)
+            assertEquals(WidgetLabelKind.CALL_TIME, content.timeLine.label)
+            assertEquals(WidgetLabelKind.CALL_AMOUNT, content.amountLine.label)
+            assertEquals(
+                if (plan == PlanType.MONTHLY) WidgetLabelKind.FREE_QUOTA else null,
+                content.quotaLine?.label
+            )
         }
     }
 
@@ -217,9 +240,15 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 300),
             PlanType.PER_CALL
         )
-        assertEquals(WidgetLine("通話時間", "128.0", "分", WIDGET_TIME_REFERENCE), content.timeLine)
+        assertEquals(
+            WidgetLine(WidgetLabelKind.CALL_TIME, "128.0", WidgetUnit.MINUTES, WIDGET_TIME_REFERENCE),
+            content.timeLine
+        )
         assertEquals(null, content.quotaLine)
-        assertEquals(WidgetLine("通話金額", "374", "円", WIDGET_AMOUNT_REFERENCE), content.amountLine)
+        assertEquals(
+            WidgetLine(WidgetLabelKind.CALL_AMOUNT, "374", WidgetUnit.YEN, WIDGET_AMOUNT_REFERENCE),
+            content.amountLine
+        )
     }
 
     @Test
@@ -251,7 +280,10 @@ class WidgetPresentationTest {
             settings(monthlyFreeSec = 0, perCallFreeSec = 0),
             PlanType.PAY_AS_YOU_GO
         )
-        assertEquals(WidgetLine("通話時間", "42.0", "分", WIDGET_TIME_REFERENCE), content.timeLine)
+        assertEquals(
+            WidgetLine(WidgetLabelKind.CALL_TIME, "42.0", WidgetUnit.MINUTES, WIDGET_TIME_REFERENCE),
+            content.timeLine
+        )
         assertEquals(null, content.quotaLine)
         assertEquals("451", content.amountLine.value)
     }
@@ -470,11 +502,14 @@ class WidgetPresentationTest {
     }
 
     @Test
-    fun `every palette color is opaque and has a label`() {
+    fun `every palette color is opaque and has its own name`() {
         for (color in WIDGET_COLOR_PALETTE) {
             assertEquals(0xFF, (color.argb ushr 24) and 0xFF)
-            assertEquals(true, color.label.isNotBlank())
         }
+        // 色名（表示名の種類）は重複させない。UI 側で 1 対 1 に文字列リソースへ解決する（5.8）
+        val names = WIDGET_COLOR_PALETTE.map { it.name }
+        assertEquals(names.size, names.toSet().size)
+        assertEquals(WidgetPaletteName.entries.size, WIDGET_COLOR_PALETTE.size)
     }
 
     @Test
@@ -523,22 +558,23 @@ class WidgetPresentationTest {
     // --- 自動更新の印（5.5.1） ---
 
     @Test
-    fun `the amount label carries a mark when the redraw came from the periodic update`() {
+    fun `the amount line is marked when the redraw came from the periodic update`() {
         val content = presentWidget(
             result(20 * 60, 0), settings(70 * 60), PlanType.MONTHLY, 14 * 60, autoUpdated = true
         )
-        assertEquals("通話金額 ⌚", content.amountLine.label)
-        // 印はラベルだけの話で、数字・単位・桁そろえの基準には触れない
+        assertEquals(true, content.amountLine.marked)
+        // 印はラベルだけの話で、ラベルの種類・数字・単位・桁そろえの基準には触れない
+        assertEquals(WidgetLabelKind.CALL_AMOUNT, content.amountLine.label)
         assertEquals("0", content.amountLine.value)
-        assertEquals("円", content.amountLine.unit)
+        assertEquals(WidgetUnit.YEN, content.amountLine.unit)
         assertEquals(WIDGET_AMOUNT_REFERENCE, content.amountLine.reference)
     }
 
     @Test
-    fun `the amount label has no mark for a manual or settings driven redraw`() {
+    fun `the amount line is not marked for a manual or settings driven redraw`() {
         for (plan in PlanType.entries) {
             val content = presentWidget(result(20 * 60, 0), settings(70 * 60), plan)
-            assertEquals("通話金額", content.amountLine.label)
+            assertEquals(false, content.amountLine.marked)
         }
     }
 
@@ -547,18 +583,24 @@ class WidgetPresentationTest {
         val content = presentWidget(
             result(20 * 60, 0), settings(70 * 60), PlanType.MONTHLY, 14 * 60, autoUpdated = true
         )
-        assertEquals("通話時間", content.timeLine.label)
-        assertEquals("無料枠", content.quotaLine?.label)
+        assertEquals(false, content.timeLine.marked)
+        assertEquals(false, content.quotaLine?.marked)
     }
 
     @Test
-    fun `every plan can show the mark`() {
+    fun `every plan can carry the mark`() {
         for (plan in PlanType.entries) {
             val content = presentWidget(
                 result(20 * 60, 0), settings(70 * 60), plan, 14 * 60, autoUpdated = true
             )
-            assertEquals("通話金額 $WIDGET_AUTO_UPDATE_MARK", content.amountLine.label)
+            assertEquals(true, content.amountLine.marked)
         }
+    }
+
+    @Test
+    fun `the auto update mark is a single language neutral symbol`() {
+        // Provider がラベル文字列に添える記号。言語リソースには入れず 1 箇所で持つ
+        assertEquals("⌚", WIDGET_AUTO_UPDATE_MARK)
     }
 
     private fun contrastRatio(a: Int, b: Int): Double {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      spec: docs/spec.md 5.8 通貨記号を数値の前に置くか。英語は ¥1,220、日本語（values-ja）は 1,220円。
+      書式文字列（fmt_yen）で済む箇所はそちらを使い、ラベル・数字・単位を別々に描く
+      ウィジェットと設定画面の入力欄だけがこの値を見る。
+    -->
+    <bool name="yen_before_value">true</bool>
+</resources>

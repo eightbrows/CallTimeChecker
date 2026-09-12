@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
+import androidx.annotation.StringRes
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -61,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,13 +82,19 @@ import io.github.eightbrows.CallTimeChecker.logic.Result
 import io.github.eightbrows.CallTimeChecker.logic.Settings
 import io.github.eightbrows.CallTimeChecker.logic.calculate
 import io.github.eightbrows.CallTimeChecker.logic.calculateDetails
-import io.github.eightbrows.CallTimeChecker.logic.formatAmount
 import io.github.eightbrows.CallTimeChecker.logic.formatMinutes
 import io.github.eightbrows.CallTimeChecker.logic.periodMonth
 import io.github.eightbrows.CallTimeChecker.logic.periodOf
-import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
 import io.github.eightbrows.CallTimeChecker.logic.toBillingSettings
 import io.github.eightbrows.CallTimeChecker.ui.SettingsScreen
+import io.github.eightbrows.CallTimeChecker.ui.callsWithBilledText
+import io.github.eightbrows.CallTimeChecker.ui.labelRes
+import io.github.eightbrows.CallTimeChecker.ui.minSecText
+import io.github.eightbrows.CallTimeChecker.ui.minutesText
+import io.github.eightbrows.CallTimeChecker.ui.monthOffsetText
+import io.github.eightbrows.CallTimeChecker.ui.secondsText
+import io.github.eightbrows.CallTimeChecker.ui.wholeMinutesText
+import io.github.eightbrows.CallTimeChecker.ui.yenText
 import io.github.eightbrows.CallTimeChecker.ui.theme.CallTimeCheckerTheme
 import io.github.eightbrows.CallTimeChecker.ui.theme.shouldUseDarkTheme
 import kotlinx.coroutines.Dispatchers
@@ -158,12 +166,15 @@ private sealed interface Screen {
 }
 
 /** spec: docs/spec.md 12 未決事項「内訳リストに『課金対象のみ / 全件』フィルタ機能」。UI表示上の絞り込みのみで Billing.kt には影響しない */
-private enum class BreakdownFilter { ALL, BILLED_ONLY }
+private enum class BreakdownFilter(@StringRes val labelRes: Int) {
+    ALL(R.string.filter_all),
+    BILLED_ONLY(R.string.filter_billed_only)
+}
 
 /** spec: docs/spec.md 5.6 アプリ本体のタブ構成。宣言順が TabRow の並び順になる */
-private enum class MainTab(val label: String) {
-    SUMMARY("サマリ"),
-    HISTORY("通話履歴")
+private enum class MainTab(@StringRes val labelRes: Int) {
+    SUMMARY(R.string.tab_summary),
+    HISTORY(R.string.tab_history)
 }
 
 private sealed interface UiState {
@@ -175,7 +186,8 @@ private sealed interface UiState {
         val details: List<CallDetail>,
         val settings: Settings
     ) : UiState
-    data class Error(val message: String) : UiState
+    /** message は例外のメッセージ。無ければ null で、表示側が定型文だけを出す */
+    data class Error(val message: String?) : UiState
 }
 
 /** spec: docs/spec.md 5.6 アプリ本体（サマリ表示・内訳リスト・権限要求・設定画面への遷移） */
@@ -259,7 +271,7 @@ private fun CallTimeCheckerApp(
             val details = calculateDetails(records, billingSettings)
             state = UiState.Loaded(period, result, details, billingSettings)
         } catch (e: Exception) {
-            state = UiState.Error(e.message ?: "更新に失敗しました")
+            state = UiState.Error(e.message)
         }
     }
 
@@ -324,22 +336,28 @@ private fun PermissionRequest(onRequest: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("通話時間を集計するには、通話履歴の読み取り権限が必要です")
+        Text(stringResource(R.string.permission_rationale))
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onRequest) { Text("権限を許可") }
+        Button(onClick = onRequest) { Text(stringResource(R.string.action_grant_permission)) }
     }
 }
 
 @Composable
-private fun ErrorView(message: String, onRetry: () -> Unit) {
+private fun ErrorView(message: String?, onRetry: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("更新に失敗しました: $message")
+        Text(
+            if (message == null) {
+                stringResource(R.string.error_update_failed)
+            } else {
+                stringResource(R.string.error_update_failed_with_reason, message)
+            }
+        )
         Spacer(Modifier.height(12.dp))
-        Button(onClick = onRetry) { Text("再試行") }
+        Button(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
     }
 }
 
@@ -368,7 +386,8 @@ private fun LoadedContent(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                "通話時間確認アプリ",
+                // ランチャーに出す名前（app_name）と同じ文字列を見出しにも使う
+                stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -376,8 +395,8 @@ private fun LoadedContent(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            HeaderButton("更新", onClick = onRefresh)
-            HeaderButton("設定", onClick = onOpenSettings)
+            HeaderButton(stringResource(R.string.action_refresh), onClick = onRefresh)
+            HeaderButton(stringResource(R.string.action_settings), onClick = onOpenSettings)
         }
         // 月送りはサマリ・通話履歴の両タブに効くため、タブの中ではなくヘッダ側に置く。
         // 上下の余白は、すぐ上のヘッダボタンやすぐ下のタブを誤タップしないためのもの
@@ -393,7 +412,7 @@ private fun LoadedContent(
                 Tab(
                     selected = pagerState.currentPage == index,
                     onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                    text = { Text(entry.label) }
+                    text = { Text(stringResource(entry.labelRes)) }
                 )
             }
         }
@@ -507,15 +526,17 @@ private fun MonthNavigation(monthOffset: Int, onMonthOffsetChange: (Int) -> Unit
     ) {
         Text(
             // 「次月」を無効化しているため monthOffset が正になることはない
-            if (monthOffset == 0) "今月" else "${-monthOffset}ヶ月前",
+            monthOffsetText(monthOffset),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             // 余った幅をラベル側が持つことでボタン 2 つが右端に寄る
             modifier = Modifier.weight(1f)
         )
         // 過去方向には制限を設けない（記録が無ければ 0 件の結果になるだけ）
-        HeaderButton("← 前月") { onMonthOffsetChange(monthOffset - 1) }
-        HeaderButton("次月 →", enabled = monthOffset < 0) { onMonthOffsetChange(monthOffset + 1) }
+        HeaderButton(stringResource(R.string.month_prev)) { onMonthOffsetChange(monthOffset - 1) }
+        HeaderButton(stringResource(R.string.month_next), enabled = monthOffset < 0) {
+            onMonthOffsetChange(monthOffset + 1)
+        }
     }
 }
 
@@ -525,12 +546,15 @@ private fun MonthNavigation(monthOffset: Int, onMonthOffsetChange: (Int) -> Unit
  */
 @Composable
 private fun HistorySummary(result: Result) {
-    SectionHeading("履歴集計")
+    SectionHeading(stringResource(R.string.section_history_totals))
     Spacer(Modifier.height(4.dp))
-    InfoRow("通話件数", "${result.callCount}件（課金対象 ${result.billedCallCount}件）")
-    InfoRow("通話時間（実時間）", "${result.countedSec / 60}分${result.countedSec % 60}秒")
-    InfoRow("通話時間（課金枠換算）", "${result.quotaConsumedSec / 60}分${result.quotaConsumedSec % 60}秒")
-    InfoRow("通話時間（除外）", "${result.excludedSec / 60}分${result.excludedSec % 60}秒")
+    InfoRow(
+        stringResource(R.string.label_call_count),
+        callsWithBilledText(result.callCount, result.billedCallCount)
+    )
+    InfoRow(stringResource(R.string.label_talk_time_actual), minSecText(result.countedSec))
+    InfoRow(stringResource(R.string.label_talk_time_billing), minSecText(result.quotaConsumedSec))
+    InfoRow(stringResource(R.string.label_talk_time_excluded), minSecText(result.excludedSec))
 }
 
 /** spec: docs/spec.md 5.6.2 通話履歴タブ（履歴集計 + 通話履歴の内訳リスト） */
@@ -549,12 +573,12 @@ private fun ColumnScope.HistoryTab(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        SectionHeading("通話履歴")
+        SectionHeading(stringResource(R.string.tab_history))
         Box(Modifier.width(200.dp)) {
             SegmentedControl(
                 options = BreakdownFilter.entries,
                 selected = filter,
-                label = { if (it == BreakdownFilter.ALL) "全件" else "課金対象のみ" },
+                label = { stringResource(it.labelRes) },
                 onSelect = onFilterChange
             )
         }
@@ -591,42 +615,57 @@ private fun SummarySection(
     val endDate = Instant.ofEpochMilli(period.second - 1).atZone(zone).toLocalDate()
 
     Column {
-        SectionHeading("設定値")
-        InfoRow("プラン", planTypeLabel(planType))
-        InfoRow("起算日", "${startDay}日")
-        InfoRow("期間", "${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}")
+        SectionHeading(stringResource(R.string.section_plan_settings))
+        InfoRow(stringResource(R.string.label_plan), stringResource(planType.labelRes()))
+        InfoRow(stringResource(R.string.label_start_day), stringResource(R.string.fmt_day_of_month, startDay))
+        InfoRow(
+            stringResource(R.string.label_period),
+            "${PERIOD_FORMATTER.format(startDate)} - ${PERIOD_FORMATTER.format(endDate)}"
+        )
         when (planType) {
-            PlanType.MONTHLY -> InfoRow("無料枠", "${settings.monthlyFreeSec / 60}分")
-            PlanType.PER_CALL -> InfoRow("1通話無料枠", "${settings.perCallFreeSec / 60}分")
+            PlanType.MONTHLY -> InfoRow(
+                stringResource(R.string.label_monthly_quota), wholeMinutesText(settings.monthlyFreeSec / 60)
+            )
+            PlanType.PER_CALL -> InfoRow(
+                stringResource(R.string.label_per_call_quota), wholeMinutesText(settings.perCallFreeSec / 60)
+            )
             PlanType.PAY_AS_YOU_GO -> Unit
         }
-        InfoRow("単価", "${formatAmount(settings.unitPrice)}円 / ${settings.unitSec}秒")
+        InfoRow(
+            stringResource(R.string.label_rate),
+            stringResource(R.string.fmt_rate, yenText(settings.unitPrice), secondsText(settings.unitSec))
+        )
 
         SectionDivider()
-        SectionHeading("現在の状況")
+        SectionHeading(stringResource(R.string.section_current_status))
         Spacer(Modifier.height(8.dp))
         when (planType) {
             PlanType.MONTHLY -> {
                 val remainingSec = (settings.monthlyFreeSec - result.quotaConsumedSec).coerceAtLeast(0)
+                // 「20.5 / 49.5分」のように 2 つの数字に単位を 1 つだけ付ける
+                val pair = stringResource(
+                    R.string.fmt_used_remaining,
+                    formatMinutes(result.quotaConsumedSec), formatMinutes(remainingSec)
+                )
                 StatusItem(
-                    label = "通話時間 / 無料枠残",
-                    value = "${formatMinutes(result.quotaConsumedSec)} / ${formatMinutes(remainingSec)}分",
+                    label = stringResource(R.string.label_used_remaining),
+                    value = stringResource(R.string.fmt_minutes, pair),
                     over = result.quotaConsumedSec > settings.monthlyFreeSec
                 )
             }
             PlanType.PER_CALL -> StatusItem(
-                label = "通話時間",
-                value = "${formatMinutes(result.quotaConsumedSec)}分",
+                label = stringResource(R.string.label_talk_time),
+                value = minutesText(result.quotaConsumedSec),
                 over = result.billedCallCount > 0
             )
             PlanType.PAY_AS_YOU_GO -> StatusItem(
-                label = "通話時間",
-                value = "${formatMinutes(result.quotaConsumedSec)}分",
+                label = stringResource(R.string.label_talk_time),
+                value = minutesText(result.quotaConsumedSec),
                 over = null
             )
         }
         Spacer(Modifier.height(12.dp))
-        StatusItem(label = "通話金額", value = "${formatAmount(result.amount)}円", over = null)
+        StatusItem(label = stringResource(R.string.label_charges), value = yenText(result.amount), over = null)
 
         SectionDivider()
         HistorySummary(result)
@@ -684,7 +723,7 @@ private fun OverBadge(over: Boolean) {
         shape = RoundedCornerShape(50)
     ) {
         Text(
-            if (over) "超過あり" else "超過なし",
+            stringResource(if (over) R.string.badge_over else R.string.badge_within),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
         )
@@ -703,7 +742,7 @@ private fun SectionDivider() {
 private fun BreakdownList(details: List<CallDetail>, settings: Settings, modifier: Modifier = Modifier) {
     if (details.isEmpty()) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text("該当する通話はありません")
+            Text(stringResource(R.string.empty_calls))
         }
         return
     }
@@ -726,20 +765,25 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
     }
 
     val amountLabel = if (detail.billedSec > 0) {
-        "¥${formatAmount(detail.billedSec / settings.unitSec * settings.unitPrice)}"
+        yenText(detail.billedSec / settings.unitSec * settings.unitPrice)
     } else {
-        "無料"
+        stringResource(R.string.detail_free)
     }
-    val statusLabel = when {
-        detail.excluded -> "除外"
-        record.durationSec == 0 -> "未応答"
-        detail.billedSec > 0 -> "課金対象"
-        else -> "定額内"
-    }
+    val statusLabel = stringResource(
+        when {
+            detail.excluded -> R.string.detail_excluded
+            record.durationSec == 0 -> R.string.detail_unanswered
+            detail.billedSec > 0 -> R.string.detail_billed
+            else -> R.string.detail_within_plan
+        }
+    )
     val judgementText = if (detail.quotaConsumedSec > 0) {
-        "$amountLabel・$statusLabel・課金枠 ${detail.quotaConsumedSec}秒"
+        stringResource(
+            R.string.fmt_detail_three,
+            amountLabel, statusLabel, stringResource(R.string.detail_quota_seconds, detail.quotaConsumedSec)
+        )
     } else {
-        "$amountLabel・$statusLabel"
+        stringResource(R.string.fmt_detail_two, amountLabel, statusLabel)
     }
     // 枠の計算対象になった通話(quotaConsumedSec > 0)だけ、結果に応じて色分けしたドットを付ける。
     // 除外・未応答はそもそも計算対象外なのでドットなし
@@ -752,11 +796,11 @@ private fun BreakdownRow(detail: CallDetail, settings: Settings) {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(DATETIME_FORMATTER.format(dateTime), style = MaterialTheme.typography.bodySmall)
-            Text("${record.durationSec}秒", style = MaterialTheme.typography.bodySmall)
+            Text(secondsText(record.durationSec), style = MaterialTheme.typography.bodySmall)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                record.number ?: "非通知",
+                record.number ?: stringResource(R.string.unknown_number),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

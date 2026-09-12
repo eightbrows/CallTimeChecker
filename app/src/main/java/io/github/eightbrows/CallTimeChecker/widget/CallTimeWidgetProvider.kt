@@ -26,8 +26,11 @@ import io.github.eightbrows.CallTimeChecker.data.CallLogSync
 import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
+import io.github.eightbrows.CallTimeChecker.logic.WIDGET_AUTO_UPDATE_MARK
 import io.github.eightbrows.CallTimeChecker.logic.WidgetColor
+import io.github.eightbrows.CallTimeChecker.logic.WidgetLabelKind
 import io.github.eightbrows.CallTimeChecker.logic.WidgetLine
+import io.github.eightbrows.CallTimeChecker.logic.WidgetUnit
 import io.github.eightbrows.CallTimeChecker.logic.widgetPaletteArgb
 import io.github.eightbrows.CallTimeChecker.logic.widgetTextColorOn
 import io.github.eightbrows.CallTimeChecker.logic.calculate
@@ -73,12 +76,46 @@ private const val WIDGET_DIVIDER_ALPHA = 0x66
 private const val WIDGET_LABEL_SCALE = 0.45f
 
 /**
+ * spec: docs/spec.md 5.8 WidgetLine の種類を、現在の言語の文字列に解決したもの。
+ * presentWidget() は Context を持てないため種類だけを返し、ここで初めて文言が決まる。
+ * unitBeforeValue は通貨記号を数字の前に置くか（英語の ¥1,220）。分は常に後ろ。
+ */
+private data class ResolvedLine(
+    val label: String,
+    val value: String,
+    val unit: String,
+    val unitBeforeValue: Boolean,
+    val reference: String?
+)
+
+private fun resolveLine(context: Context, line: WidgetLine): ResolvedLine {
+    val labelText = context.getString(
+        when (line.label) {
+            WidgetLabelKind.CALL_TIME -> R.string.widget_label_talk_time
+            WidgetLabelKind.FREE_QUOTA -> R.string.widget_label_remaining
+            WidgetLabelKind.CALL_AMOUNT -> R.string.widget_label_charges
+        }
+    )
+    // 自動更新の印はラベルの一部として添える（5.5.1）。言語によらず同じ記号
+    val label = if (line.marked) "$labelText $WIDGET_AUTO_UPDATE_MARK" else labelText
+    val unit = context.getString(
+        when (line.unit) {
+            WidgetUnit.MINUTES -> R.string.widget_unit_min
+            WidgetUnit.YEN -> R.string.widget_unit_yen
+        }
+    )
+    val before = line.unit == WidgetUnit.YEN && context.resources.getBoolean(R.bool.yen_before_value)
+    return ResolvedLine(label, line.value, unit, before, line.reference)
+}
+
+/**
  * spec: docs/spec.md 5.5.1 「ラベル（小）」の下に「数字（大）+ 単位（小）」を置く 1 項目。
  * 2 行だが 1 つの CharSequence にまとめ、大きさ・太さの差はスパンで付ける。
  * autoSize は複数行のテキスト全体を一様に拡大縮小するため、改行を挟んでも比率は保たれる。
  * RelativeSizeSpan / StyleSpan はいずれも ParcelableSpan なので RemoteViews 越しに保持される。
+ * 単位は言語によって数字の前（英語の ¥）にも後ろ（分、円）にも来る（5.8）。
  */
-private fun widgetLineText(line: WidgetLine): CharSequence {
+private fun widgetLineText(line: ResolvedLine): CharSequence {
     // spec 5.5.1: 基準文字列に足りない桁数を数え、数字の前後に同じ幅ずつ埋める。
     // 桁埋めに空白文字ではなく数字を使うのは、行末の空白が描画時に切り詰められるのと、
     // 数字なら基準文字列と同じ字形なので幅が厳密に一致するため
@@ -91,20 +128,23 @@ private fun widgetLineText(line: WidgetLine): CharSequence {
     val leadPadStart = sb.length
     appendHalfPad(sb, padCount)
     val leadPadEnd = sb.length
+    if (line.unitBeforeValue && line.unit.isNotEmpty()) appendSmall(sb, line.unit)
+    val valueStart = sb.length
     sb.append(line.value)
     val valueEnd = sb.length
-    if (line.unit.isNotEmpty()) appendSmall(sb, line.unit)
+    if (!line.unitBeforeValue && line.unit.isNotEmpty()) appendSmall(sb, line.unit)
     val trailPadStart = sb.length
     appendHalfPad(sb, padCount)
 
-    // 桁埋めは数字と同じ大きさ・太さでないと基準文字列と幅がそろわないため、
-    // 単位（小）を挟んだ後ろ側も含めて数字と同じ扱いにする
-    sb.setSpan(StyleSpan(Typeface.BOLD), leadPadStart, valueEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    // 数字は太字。桁埋めも数字と同じ大きさ・太さでないと基準文字列と幅がそろわないため、
+    // 前後の桁埋めも太字にする（単位が間に挟まる場合があるので数字とは別スパン）
+    sb.setSpan(StyleSpan(Typeface.BOLD), valueStart, valueEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     // 幅だけ確保して見せないので透明にする
     if (leadPadEnd > leadPadStart) {
+        sb.setSpan(StyleSpan(Typeface.BOLD), leadPadStart, leadPadEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         markPad(sb, leadPadStart, leadPadEnd)
-        markPad(sb, trailPadStart, sb.length)
         sb.setSpan(StyleSpan(Typeface.BOLD), trailPadStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        markPad(sb, trailPadStart, sb.length)
     }
     return sb
 }
@@ -113,8 +153,10 @@ private fun widgetLineText(line: WidgetLine): CharSequence {
  * 読み上げ用の文字列。widgetLineText() の桁埋めは見た目のためだけのものなので、
  * そのまま読み上げられないよう contentDescription には埋めていない文字列を渡す。
  */
-private fun widgetLineDescription(line: WidgetLine): String =
-    if (line.label.isEmpty()) line.value + line.unit else "${line.label} ${line.value}${line.unit}"
+private fun widgetLineDescription(line: ResolvedLine): String {
+    val number = if (line.unitBeforeValue) line.unit + line.value else line.value + line.unit
+    return if (line.label.isEmpty()) number else "${line.label} $number"
+}
 
 /**
  * spec: docs/spec.md 5.5.1 片側ぶんの桁埋め（= 不足桁数の半分の幅）を追加する。
@@ -288,10 +330,10 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.widget_call_time)
             restoreNormalLayout(views)
 
-            // spec 5.5.1: ラベルも数字もプラン形式で変わるため、文字列は presentWidget() が組み立てる。
-            // ここではスパンを付けてビューへ割り当てるだけ
-            applyLine(views, R.id.widget_line_time, content.timeLine)
-            applyLine(views, R.id.widget_line_amount, content.amountLine)
+            // spec 5.5.1: 項目の種類と数字は presentWidget() が決める。
+            // ここでは種類を文字列リソースに解決し、スパンを付けてビューへ割り当てるだけ
+            applyLine(context, views, R.id.widget_line_time, content.timeLine)
+            applyLine(context, views, R.id.widget_line_amount, content.amountLine)
 
             // 月間の無料枠が無いプラン形式では行ごと GONE にする。
             // GONE の行は weight を消費しないので、残る通話時間の行が上段いっぱいに広がる
@@ -300,7 +342,7 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
                 R.id.widget_line_quota, if (quota == null) View.GONE else View.VISIBLE
             )
             if (quota != null) {
-                applyLine(views, R.id.widget_line_quota, quota)
+                applyLine(context, views, R.id.widget_line_quota, quota)
             }
 
             val bgArgb = backgroundArgb(appSettings, content.color)
@@ -319,16 +361,17 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    private fun applyLine(views: RemoteViews, viewId: Int, line: WidgetLine) {
-        views.setTextViewText(viewId, widgetLineText(line))
-        views.setContentDescription(viewId, widgetLineDescription(line))
+    private fun applyLine(context: Context, views: RemoteViews, viewId: Int, line: WidgetLine) {
+        val resolved = resolveLine(context, line)
+        views.setTextViewText(viewId, widgetLineText(resolved))
+        views.setContentDescription(viewId, widgetLineDescription(resolved))
     }
 
     private fun buildNoPermissionViews(context: Context): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
         val appSettings = SettingsRepository(context).load()
         val bgArgb = backgroundArgb(appSettings, WidgetColor.NORMAL)
-        applyStatusLayout(views, "タップして権限を許可", "", widgetTextColorOn(bgArgb))
+        applyStatusLayout(views, context.getString(R.string.widget_status_no_permission), "", widgetTextColorOn(bgArgb))
         applyBackground(views, bgArgb, appSettings.widgetBgTransparencyStep)
 
         val intent = Intent(context, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -344,7 +387,7 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
         val appSettings = SettingsRepository(context).load()
         val bgArgb = backgroundArgb(appSettings, WidgetColor.NORMAL)
-        applyStatusLayout(views, "更新中…", "", widgetTextColorOn(bgArgb))
+        applyStatusLayout(views, context.getString(R.string.widget_status_updating), "", widgetTextColorOn(bgArgb))
         applyBackground(views, bgArgb, appSettings.widgetBgTransparencyStep)
         return views
     }
@@ -353,7 +396,12 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         val views = RemoteViews(context.packageName, R.layout.widget_call_time)
         val appSettings = SettingsRepository(context).load()
         val bgArgb = backgroundArgb(appSettings, WidgetColor.OVER)
-        applyStatusLayout(views, "更新失敗", "タップして再試行", widgetTextColorOn(bgArgb))
+        applyStatusLayout(
+            views,
+            context.getString(R.string.widget_status_error),
+            context.getString(R.string.widget_status_retry),
+            widgetTextColorOn(bgArgb)
+        )
         applyBackground(views, bgArgb, appSettings.widgetBgTransparencyStep)
         views.setOnClickPendingIntent(R.id.widget_root, manualRefreshPendingIntent(context))
         return views

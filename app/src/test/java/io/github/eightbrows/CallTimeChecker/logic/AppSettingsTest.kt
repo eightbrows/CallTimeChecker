@@ -209,14 +209,6 @@ class AppSettingsTest {
         assertEquals(DEFAULT_APP_SETTINGS.startDay, clampStartDay(DEFAULT_APP_SETTINGS.startDay))
     }
 
-    // --- プラン形式の表示名 (5.7) ---
-
-    @Test
-    fun `planTypeLabel returns the Japanese label used in the UI`() {
-        assertEquals("月間定額型", planTypeLabel(PlanType.MONTHLY))
-        assertEquals("1通話定額型", planTypeLabel(PlanType.PER_CALL))
-        assertEquals("従量課金", planTypeLabel(PlanType.PAY_AS_YOU_GO))
-    }
 
     // --- プラン形式の導出とマイグレーション (5.4.2 / 5.7) ---
 
@@ -324,11 +316,11 @@ class AppSettingsTest {
     @Test
     fun `zero is rejected for the free minutes of the plan that owns the field`() {
         assertEquals(
-            "1〜1440 の範囲で入力してください",
+            InputError.OutOfRange(1, 1440),
             validateRange("0", monthlyFreeMinRange(PlanType.MONTHLY))
         )
         assertEquals(
-            "1〜180 の範囲で入力してください",
+            InputError.OutOfRange(1, 180),
             validateRange("0", perCallFreeMinRange(PlanType.PER_CALL))
         )
     }
@@ -345,23 +337,36 @@ class AppSettingsTest {
 
     @Test
     fun `excludePrefixesPreview lists every prefix when there are three or fewer`() {
-        assertEquals("0570, 0180", excludePrefixesPreview(listOf("0570", "0180")))
-        assertEquals("0570, 0180, 0990", excludePrefixesPreview(listOf("0570", "0180", "0990")))
+        assertEquals(
+            ExcludePrefixesPreview(listOf("0570", "0180"), rest = 0),
+            excludePrefixesPreview(listOf("0570", "0180"))
+        )
+        assertEquals(
+            ExcludePrefixesPreview(listOf("0570", "0180", "0990"), rest = 0),
+            excludePrefixesPreview(listOf("0570", "0180", "0990"))
+        )
     }
 
     @Test
     fun `excludePrefixesPreview truncates to the first three with a remainder count`() {
-        // DEFAULT_EXCLUDE_PREFIXES は 10 件（5.3.2）
-        assertEquals("0570, 0180, 0990 ほか7件", excludePrefixesPreview(DEFAULT_EXCLUDE_PREFIXES))
-        assertEquals("a, b, c ほか1件", excludePrefixesPreview(listOf("a", "b", "c", "d")))
+        // DEFAULT_EXCLUDE_PREFIXES は 10 件（5.3.2）。「ほか 7 件」の文言は UI 側が付ける（5.8）
+        assertEquals(
+            ExcludePrefixesPreview(listOf("0570", "0180", "0990"), rest = 7),
+            excludePrefixesPreview(DEFAULT_EXCLUDE_PREFIXES)
+        )
+        assertEquals(
+            ExcludePrefixesPreview(listOf("a", "b", "c"), rest = 1),
+            excludePrefixesPreview(listOf("a", "b", "c", "d"))
+        )
+        assertEquals(3, EXCLUDE_PREVIEW_HEAD_COUNT)
     }
 
     @Test
-    fun `excludePrefixesPreview on an empty list says so`() {
-        assertEquals("（なし）", excludePrefixesPreview(emptyList()))
+    fun `excludePrefixesPreview on an empty list has nothing to show`() {
+        assertEquals(ExcludePrefixesPreview(emptyList(), rest = 0), excludePrefixesPreview(emptyList()))
     }
 
-    // --- 入力欄の範囲チェック (5.7)。範囲外は保存をブロックするためのエラーメッセージを返す ---
+    // --- 入力欄の範囲チェック (5.7)。範囲外は保存をブロックするための InputError を返す（文言は UI 側、5.8） ---
 
     @Test
     fun `validateRange returns null for values inside the range`() {
@@ -372,22 +377,22 @@ class AppSettingsTest {
     }
 
     @Test
-    fun `validateRange reports out-of-range values`() {
-        assertEquals("0〜1440 の範囲で入力してください", validateRange("1441", 0, 1440))
-        assertEquals("1〜31 の範囲で入力してください", validateRange("0", 1, 31))
-        assertEquals("1〜31 の範囲で入力してください", validateRange("32", 1, 31))
+    fun `validateRange reports out-of-range values with the range so the message can quote it`() {
+        assertEquals(InputError.OutOfRange(0, 1440), validateRange("1441", 0, 1440))
+        assertEquals(InputError.OutOfRange(1, 31), validateRange("0", 1, 31))
+        assertEquals(InputError.OutOfRange(1, 31), validateRange("32", 1, 31))
     }
 
     @Test
     fun `validateRange reports empty and non-numeric input`() {
-        assertEquals("数値を入力してください", validateRange("", 0, 999))
-        assertEquals("数値を入力してください", validateRange("   ", 0, 999))
-        assertEquals("数値を入力してください", validateRange("abc", 0, 999))
+        assertEquals(InputError.NotANumber, validateRange("", 0, 999))
+        assertEquals(InputError.NotANumber, validateRange("   ", 0, 999))
+        assertEquals(InputError.NotANumber, validateRange("abc", 0, 999))
     }
 
     @Test
     fun `validateRange rejects values that overflow Int`() {
-        assertEquals("数値を入力してください", validateRange("99999999999", 0, 999))
+        assertEquals(InputError.NotANumber, validateRange("99999999999", 0, 999))
     }
 
     // --- ウィジェット背景の透過率（5.7） ---
@@ -462,11 +467,6 @@ class AppSettingsTest {
         assertEquals(0, clampWarnRemainingMin(56, 1))
     }
 
-    @Test
-    fun `warnRemainingLabel spells out that the value is remaining time`() {
-        assertEquals("残り14分", warnRemainingLabel(14))
-        assertEquals("残り1分", warnRemainingLabel(1))
-    }
 
     @Test
     fun `migration resets a warn remaining that no longer fits the quota`() {
@@ -562,13 +562,6 @@ class AppSettingsTest {
         assertEquals(ThemeMode.SYSTEM, DEFAULT_THEME_MODE)
     }
 
-    @Test
-    fun `each theme mode has its own label`() {
-        val labels = ThemeMode.entries.map { themeModeLabel(it) }
-        assertEquals(listOf("システムに従う", "ライト", "ダーク"), labels)
-        // 選択肢の見分けが付かなくならないよう、表示名は重複させない
-        assertEquals(labels.size, labels.toSet().size)
-    }
 
     @Test
     fun `theme modes round trip through their stored value`() {

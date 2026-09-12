@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- spec: docs/spec.md 5.8 日本語。名前と役割は values/strings.xml のコメントを参照 -->
+<resources>
+    <string name="app_name">通話時間確認アプリ</string>
+
+    <!-- 操作 -->
+    <string name="action_refresh">更新</string>
+    <string name="action_settings">設定</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_save">保存</string>
+    <string name="action_retry">再試行</string>
+    <string name="action_grant_permission">権限を許可</string>
+    <string name="action_reset_defaults">初期値に戻す</string>
+
+    <!-- メイン画面 -->
+    <string name="tab_summary">サマリ</string>
+    <string name="tab_history">通話履歴</string>
+    <string name="permission_rationale">通話時間を集計するには、通話履歴の読み取り権限が必要です</string>
+    <string name="error_update_failed">更新に失敗しました</string>
+    <string name="error_update_failed_with_reason">更新に失敗しました: %1$s</string>
+    <string name="error_no_browser">ブラウザが見つかりません</string>
+
+    <!-- 月送り -->
+    <string name="month_current">今月</string>
+    <plurals name="months_ago">
+        <item quantity="other">%1$dヶ月前</item>
+    </plurals>
+    <string name="month_prev">← 前月</string>
+    <string name="month_next">次月 →</string>
+
+    <!-- サマリ -->
+    <string name="section_plan_settings">設定値</string>
+    <string name="label_plan">プラン</string>
+    <string name="label_start_day">起算日</string>
+    <string name="label_period">期間</string>
+    <string name="label_monthly_quota">無料枠</string>
+    <string name="label_per_call_quota">1通話無料枠</string>
+    <string name="label_rate">単価</string>
+    <string name="section_current_status">現在の状況</string>
+    <string name="label_used_remaining">通話時間 / 無料枠残</string>
+    <string name="label_talk_time">通話時間</string>
+    <string name="label_charges">通話金額</string>
+    <string name="badge_over">超過あり</string>
+    <string name="badge_within">超過なし</string>
+
+    <!-- 履歴集計 -->
+    <string name="section_history_totals">履歴集計</string>
+    <string name="label_call_count">通話件数</string>
+    <plurals name="calls_with_billed">
+        <item quantity="other">%1$d件（課金対象 %2$d件）</item>
+    </plurals>
+    <string name="label_talk_time_actual">通話時間（実時間）</string>
+    <string name="label_talk_time_billing">通話時間（課金枠換算）</string>
+    <string name="label_talk_time_excluded">通話時間（除外）</string>
+
+    <!-- 通話履歴タブ -->
+    <string name="filter_all">全件</string>
+    <string name="filter_billed_only">課金対象のみ</string>
+    <string name="empty_calls">該当する通話はありません</string>
+    <string name="unknown_number">非通知</string>
+    <string name="detail_free">無料</string>
+    <string name="detail_excluded">除外</string>
+    <string name="detail_unanswered">未応答</string>
+    <string name="detail_billed">課金対象</string>
+    <string name="detail_within_plan">定額内</string>
+    <string name="detail_quota_seconds">課金枠 %1$d秒</string>
+    <string name="fmt_detail_two">%1$s・%2$s</string>
+    <string name="fmt_detail_three">%1$s・%2$s・%3$s</string>
+
+    <!-- 数値の書式 -->
+    <string name="fmt_minutes">%1$s分</string>
+    <string name="fmt_min_sec">%1$d分%2$d秒</string>
+    <string name="fmt_seconds">%1$d秒</string>
+    <string name="fmt_yen">%1$s円</string>
+    <string name="fmt_rate">%1$s / %2$s</string>
+    <string name="fmt_day_of_month">%1$d日</string>
+    <string name="fmt_used_remaining">%1$s / %2$s</string>
+
+    <!-- 設定画面 -->
+    <string name="settings_plan_type">プラン形式</string>
+    <string name="plan_monthly">月間定額型</string>
+    <string name="plan_per_call">1通話定額型</string>
+    <string name="plan_pay_as_you_go">従量課金</string>
+    <string name="settings_monthly_quota">定額枠</string>
+    <string name="settings_per_call_free">通話別無料</string>
+    <string name="settings_unit_sec">課金単位（時間）</string>
+    <string name="settings_unit_price">課金単位（単価）</string>
+    <string name="settings_warn_threshold">警告しきい値</string>
+    <string name="settings_theme">アプリの配色</string>
+    <string name="settings_widget_colors">ウィジェット背景色</string>
+    <string name="settings_transparency">透過率</string>
+    <string name="settings_call_log_permission">通話履歴の読み取り権限</string>
+    <string name="settings_excluded_numbers">除外番号リスト（%1$d件）</string>
+    <string name="excluded_none">（なし）</string>
+    <string name="fmt_and_more">%1$s ほか%2$d件</string>
+    <string name="excluded_hint">改行区切り</string>
+    <string name="note_fixed_zero">%1$sでは0固定</string>
+    <string name="note_warn_quota_too_small">定額枠が%1$d分未満のため警告色は使用しない</string>
+    <string name="note_not_used_for_plan">%1$sでは使用しない</string>
+    <string name="error_not_a_number">数値を入力してください</string>
+    <string name="error_out_of_range">%1$d〜%2$d の範囲で入力してください</string>
+    <string name="permission_granted">許可済み ↗</string>
+    <string name="permission_denied">未許可 ↗</string>
+    <string name="theme_system">システムに従う</string>
+    <string name="theme_light">ライト</string>
+    <string name="theme_dark">ダーク</string>
+    <string name="color_role_normal">通常</string>
+    <string name="color_role_warning">警告</string>
+    <string name="color_role_over">超過</string>
+    <string name="dialog_pick_color">%1$s色を選ぶ</string>
+    <string name="palette_white">ホワイト</string>
+    <string name="palette_pink">ピンク</string>
+    <string name="palette_purple">パープル</string>
+    <string name="palette_blue">ブルー</string>
+    <string name="palette_green">グリーン</string>
+    <string name="palette_yellow">イエロー</string>
+    <string name="palette_orange">オレンジ</string>
+    <string name="palette_red">レッド</string>
+    <string name="palette_black">ブラック</string>
+    <string name="palette_teal">ティール</string>
+    <string name="about_version">バージョン</string>
+    <string name="about_license">ライセンス</string>
+    <string name="about_website">公式サイト</string>
+
+    <!-- 単位 -->
+    <string name="unit_day">日</string>
+    <string name="unit_min">分</string>
+    <string name="unit_sec">秒</string>
+    <string name="unit_yen">円</string>
+
+    <!-- ウィジェット -->
+    <string name="widget_label_talk_time">通話時間</string>
+    <string name="widget_label_remaining">無料枠</string>
+    <string name="widget_label_charges">通話金額</string>
+    <string name="widget_unit_min">分</string>
+    <string name="widget_unit_yen">円</string>
+    <string name="widget_status_no_permission">タップして権限を許可</string>
+    <string name="widget_status_updating">更新中…</string>
+    <string name="widget_status_error">更新失敗</string>
+    <string name="widget_status_retry">タップして再試行</string>
+</resources>

@@ -3,6 +3,7 @@ package io.github.eightbrows.CallTimeChecker.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,6 +54,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.booleanResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import io.github.eightbrows.CallTimeChecker.BuildConfig
+import io.github.eightbrows.CallTimeChecker.R
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
 import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_APP_SETTINGS
 import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_EXCLUDE_PREFIXES
@@ -88,8 +92,6 @@ import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesToText
 import io.github.eightbrows.CallTimeChecker.logic.monthlyFreeMinRange
 import io.github.eightbrows.CallTimeChecker.logic.parseExcludePrefixes
 import io.github.eightbrows.CallTimeChecker.logic.perCallFreeMinRange
-import io.github.eightbrows.CallTimeChecker.logic.planTypeLabel
-import io.github.eightbrows.CallTimeChecker.logic.themeModeLabel
 import io.github.eightbrows.CallTimeChecker.logic.validateRange
 import io.github.eightbrows.CallTimeChecker.logic.widgetBgTransparencyLabel
 import io.github.eightbrows.CallTimeChecker.logic.widgetPaletteArgb
@@ -212,21 +214,22 @@ fun SettingsScreen(
         ) {
             // --- ①契約内容 ---
             Spacer(Modifier.height(6.dp))
-            Text("プラン形式", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
+            SectionLabel(stringResource(R.string.settings_plan_type))
             SegmentedControl(
                 options = PlanType.entries,
                 selected = planType,
-                label = { planTypeLabel(it) },
+                label = { stringResource(it.labelRes()) },
                 onSelect = { selectPlanType(it) }
             )
+            // 0 固定の欄と警告しきい値の注記に埋め込む、現在のプラン形式の表示名
+            val planLabel = stringResource(planType.labelRes())
 
             SteppedNumberRow(
-                label = "起算日",
+                label = stringResource(R.string.label_start_day),
                 value = startDayText,
                 onValueChange = { startDayText = it },
-                unit = "日",
-                error = startDayError,
+                unit = stringResource(R.string.unit_day),
+                error = startDayError?.message(),
                 enabled = true,
                 canDecrease = (startDayText.trim().toIntOrNull() ?: 1) > 1,
                 canIncrease = (startDayText.trim().toIntOrNull() ?: 1) < 31,
@@ -241,11 +244,11 @@ fun SettingsScreen(
             )
 
             SteppedNumberRow(
-                label = "定額枠",
+                label = stringResource(R.string.settings_monthly_quota),
                 value = if (monthlyFreeRange != null) monthlyFreeMinText else "0",
                 onValueChange = { monthlyFreeMinText = it },
-                unit = "分",
-                error = monthlyFreeError,
+                unit = stringResource(R.string.unit_min),
+                error = monthlyFreeError?.message(),
                 enabled = monthlyFreeRange != null,
                 canDecrease = monthlyFreeRange != null &&
                         (monthlyFreeMinText.trim().toIntOrNull() ?: 0) > monthlyFreeRange.first,
@@ -259,15 +262,15 @@ fun SettingsScreen(
                     val v = monthlyFreeMinText.trim().toIntOrNull() ?: 0
                     monthlyFreeMinText = (v + 1).toString()
                 },
-                disabledNote = "${planTypeLabel(planType)}では0固定"
+                disabledNote = stringResource(R.string.note_fixed_zero, planLabel)
             )
 
             SteppedNumberRow(
-                label = "通話別無料",
+                label = stringResource(R.string.settings_per_call_free),
                 value = if (perCallFreeRange != null) perCallFreeMinText else "0",
                 onValueChange = { perCallFreeMinText = it },
-                unit = "分",
-                error = perCallFreeError,
+                unit = stringResource(R.string.unit_min),
+                error = perCallFreeError?.message(),
                 enabled = perCallFreeRange != null,
                 canDecrease = perCallFreeRange != null &&
                         (perCallFreeMinText.trim().toIntOrNull() ?: 0) > perCallFreeRange.first,
@@ -281,25 +284,30 @@ fun SettingsScreen(
                     val v = perCallFreeMinText.trim().toIntOrNull() ?: 0
                     perCallFreeMinText = (v + 1).toString()
                 },
-                disabledNote = "${planTypeLabel(planType)}では0固定"
+                disabledNote = stringResource(R.string.note_fixed_zero, planLabel)
             )
 
             PresetOrCustomRow(
-                label = "課金単位（時間）",
+                label = stringResource(R.string.settings_unit_sec),
                 presets = listOf(30, 60),
-                unitSuffix = "秒",
+                presetLabel = { secondsText(it) },
+                unitText = stringResource(R.string.unit_sec),
+                unitBeforeField = false,
                 valueText = unitSecText,
                 onValueChange = { unitSecText = it },
-                error = unitSecError
+                error = unitSecError?.message()
             )
 
             PresetOrCustomRow(
-                label = "課金単位（単価）",
+                label = stringResource(R.string.settings_unit_price),
                 presets = listOf(11, 22),
-                unitSuffix = "円",
+                presetLabel = { yenText(it) },
+                unitText = stringResource(R.string.unit_yen),
+                // 英語では ¥ を数字の前に置く（5.8）
+                unitBeforeField = booleanResource(R.bool.yen_before_value),
                 valueText = unitPriceText,
                 onValueChange = { unitPriceText = it },
-                error = unitPriceError
+                error = unitPriceError?.message()
             )
 
             GroupDivider()
@@ -326,11 +334,11 @@ fun SettingsScreen(
             )
 
             SteppedNumberRow(
-                label = "警告しきい値",
+                label = stringResource(R.string.settings_warn_threshold),
                 value = warnRemainingText,
                 onValueChange = { warnRemainingText = it },
-                unit = "分",
-                error = warnRemainingError,
+                unit = stringResource(R.string.unit_min),
+                error = warnRemainingError?.message(),
                 enabled = warnRemainingRange != null,
                 canDecrease = warnRemainingRange != null &&
                         (warnRemainingText.trim().toIntOrNull() ?: 0) > warnRemainingRange.first,
@@ -347,9 +355,9 @@ fun SettingsScreen(
                 // 月間定額型で無効になるのは定額枠が WARN_REMAINING_MIN_MONTHLY_FREE_MIN 未満のとき
                 // （定額枠欄が空・0 のときも含む）。特定の分数を決め打ちで書かない
                 disabledNote = if (planType == PlanType.MONTHLY) {
-                    "定額枠が${WARN_REMAINING_MIN_MONTHLY_FREE_MIN}分未満のため警告色は使用しない"
+                    stringResource(R.string.note_warn_quota_too_small, WARN_REMAINING_MIN_MONTHLY_FREE_MIN)
                 } else {
-                    "${planTypeLabel(planType)}では使用しない"
+                    stringResource(R.string.note_not_used_for_plan, planLabel)
                 }
             )
 
@@ -358,12 +366,11 @@ fun SettingsScreen(
             GroupDivider()
 
             // --- ④アプリの配色 ---
-            Text("アプリの配色", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
+            SectionLabel(stringResource(R.string.settings_theme))
             SegmentedControl(
                 options = ThemeMode.entries,
                 selected = themeMode,
-                label = { themeModeLabel(it) },
+                label = { stringResource(it.labelRes()) },
                 onSelect = { themeMode = it }
             )
 
@@ -388,6 +395,13 @@ private fun GroupDivider() {
     Spacer(Modifier.height(8.dp))
 }
 
+/** SegmentedControl の上に置く項目名。選択肢が横幅を要する項目だけ、項目名を上の行に出す */
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(4.dp))
+}
+
 @Composable
 private fun SettingsHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
     Row(
@@ -396,7 +410,7 @@ private fun SettingsHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () ->
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            "設定",
+            stringResource(R.string.action_settings),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -404,20 +418,23 @@ private fun SettingsHeader(canSave: Boolean, onCancel: () -> Unit, onSave: () ->
             modifier = Modifier.weight(1f)
         )
         OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("キャンセル", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.action_cancel), style = MaterialTheme.typography.titleMedium)
         }
         Button(onClick = onSave, enabled = canSave, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("保存", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.action_save), style = MaterialTheme.typography.titleMedium)
         }
     }
 }
 
-/** N択の排他選択を横並びの帯(セグメントコントロール)で表す汎用コンポーネント */
+/**
+ * N択の排他選択を横並びの帯(セグメントコントロール)で表す汎用コンポーネント。
+ * label は選択肢ごとの表示名。stringResource() を呼べるよう @Composable にしてある
+ */
 @Composable
 fun <T> SegmentedControl(
     options: List<T>,
     selected: T,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelect: (T) -> Unit
 ) {
     val shape = RoundedCornerShape(8.dp)
@@ -527,12 +544,17 @@ private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) 
  * 値の一致で判定すると、入力途中の値がたまたまプリセットと一致した瞬間に選択がプリセット側へ
  * 移ってカスタム欄がクリアされ、続きの桁を打てなくなる(「300」を打つ途中の「30」など)。
  * プリセットのラジオを明示的に押したときだけカスタム選択を解除する。
+ *
+ * presetLabel はプリセット値の表示（`30秒` / `¥11` など、単位込みの書式は言語側で決まる）。
+ * unitText はカスタム欄の横に出す単位で、unitBeforeField が true なら欄の前に置く（英語の ¥、5.8）。
  */
 @Composable
 private fun PresetOrCustomRow(
     label: String,
     presets: List<Int>,
-    unitSuffix: String,
+    presetLabel: @Composable (Int) -> String,
+    unitText: String,
+    unitBeforeField: Boolean,
     valueText: String,
     onValueChange: (String) -> Unit,
     error: String?
@@ -573,7 +595,7 @@ private fun PresetOrCustomRow(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("$preset$unitSuffix", style = MaterialTheme.typography.bodyMedium)
+                        Text(presetLabel(preset), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -584,6 +606,9 @@ private fun PresetOrCustomRow(
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(4.dp))
+                    if (unitBeforeField) {
+                        UnitText(unitText, Modifier.padding(end = 2.dp))
+                    }
                     OutlinedTextField(
                         value = if (isCustomSelected) valueText else "",
                         onValueChange = {
@@ -597,12 +622,9 @@ private fun PresetOrCustomRow(
                         // 3 桁（上限 300）が内側余白 16dp × 2 の内側に収まる幅
                         modifier = Modifier.width(68.dp)
                     )
-                    Text(
-                        unitSuffix,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 2.dp)
-                    )
+                    if (!unitBeforeField) {
+                        UnitText(unitText, Modifier.padding(start = 2.dp))
+                    }
                 }
             }
         }
@@ -615,6 +637,17 @@ private fun PresetOrCustomRow(
             )
         }
     }
+}
+
+/** 入力欄の横に出す単位（`分` / `min` / `¥`） */
+@Composable
+private fun UnitText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -640,7 +673,7 @@ private fun WidgetColorSection(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            "ウィジェット背景色",
+            stringResource(R.string.settings_widget_colors),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
@@ -649,7 +682,7 @@ private fun WidgetColorSection(
             if (position > 0) {
                 Text("→", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 4.dp))
             }
-            WidgetColorChip(role.label, selectedIndex(role)) { editing = role }
+            WidgetColorChip(stringResource(role.labelRes), selectedIndex(role)) { editing = role }
         }
     }
 
@@ -671,8 +704,10 @@ private fun WidgetColorSection(
     }
 }
 
-private enum class WidgetColorRole(val label: String) {
-    NORMAL("通常"), WARNING("警告"), OVER("超過")
+private enum class WidgetColorRole(@StringRes val labelRes: Int) {
+    NORMAL(R.string.color_role_normal),
+    WARNING(R.string.color_role_warning),
+    OVER(R.string.color_role_over)
 }
 
 @Composable
@@ -702,7 +737,7 @@ private fun WidgetColorPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${role.label}色を選ぶ") },
+        title = { Text(stringResource(R.string.dialog_pick_color, stringResource(role.labelRes))) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 WIDGET_COLOR_PALETTE.chunked(PALETTE_COLUMNS).forEachIndexed { row, colors ->
@@ -719,7 +754,7 @@ private fun WidgetColorPickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
     )
 }
 
@@ -748,7 +783,7 @@ private fun WidgetColorSwatch(
             }
         }
         Text(
-            palette.label,
+            stringResource(palette.name.labelRes()),
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -772,7 +807,7 @@ private fun WidgetBgTransparencySection(step: Int, onStepChange: (Int) -> Unit) 
 
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "透過率",
+            stringResource(R.string.settings_transparency),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
@@ -813,13 +848,13 @@ private fun PermissionRow(hasPermission: Boolean, onRequestPermission: () -> Uni
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            "通話履歴の読み取り権限",
+            stringResource(R.string.settings_call_log_permission),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
         Text(
-            if (hasPermission) "許可済み ↗" else "未許可 ↗",
+            stringResource(if (hasPermission) R.string.permission_granted else R.string.permission_denied),
             style = MaterialTheme.typography.bodyMedium,
             color = if (hasPermission) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
         )
@@ -842,14 +877,14 @@ private fun ExcludePrefixesSection(
     ) {
         Text(if (expanded) "▼" else "▶", style = MaterialTheme.typography.bodyMedium)
         Text(
-            "除外番号リスト（${prefixes.size}件）",
+            stringResource(R.string.settings_excluded_numbers, prefixes.size),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(start = 8.dp)
         )
     }
     if (!expanded) {
         Text(
-            excludePrefixesPreview(prefixes),
+            excludePrefixesPreviewText(prefixes),
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -861,12 +896,24 @@ private fun ExcludePrefixesSection(
     OutlinedTextField(
         value = text,
         onValueChange = onTextChange,
-        label = { Text("改行区切り") },
+        label = { Text(stringResource(R.string.excluded_hint)) },
         minLines = 4,
         modifier = Modifier.fillMaxWidth()
     )
     Spacer(Modifier.height(8.dp))
-    OutlinedButton(onClick = onReset) { Text("初期値に戻す") }
+    OutlinedButton(onClick = onReset) { Text(stringResource(R.string.action_reset_defaults)) }
+}
+
+/**
+ * spec: docs/spec.md 5.7 折りたたみ時の除外番号の要約（`0570, 0180, 0990 ほか7件`）。
+ * 先頭件数と残り件数の切り分けは logic（excludePrefixesPreview）、文言はここでリソースから付ける
+ */
+@Composable
+private fun excludePrefixesPreviewText(prefixes: List<String>): String {
+    if (prefixes.isEmpty()) return stringResource(R.string.excluded_none)
+    val preview = excludePrefixesPreview(prefixes)
+    val head = preview.head.joinToString(", ")
+    return if (preview.rest > 0) stringResource(R.string.fmt_and_more, head, preview.rest) else head
 }
 
 @Composable
@@ -878,13 +925,17 @@ private fun AboutSection() {
         try {
             context.startActivity(intent)
         } catch (e: ActivityNotFoundException) {
-            Toast.makeText(context, "ブラウザが見つかりません", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, R.string.error_no_browser, Toast.LENGTH_SHORT).show()
         }
     }
 
-    AboutRow("バージョン", BuildConfig.VERSION_NAME)
-    AboutRow("ライセンス", "Apache License 2.0 ↗") { openInBrowser(LICENSE_URL) }
-    AboutRow("公式サイト", "eightbrows.github.io ↗") { openInBrowser(OFFICIAL_SITE_URL) }
+    AboutRow(stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
+    AboutRow(stringResource(R.string.about_license), stringResource(R.string.about_license_value)) {
+        openInBrowser(LICENSE_URL)
+    }
+    AboutRow(stringResource(R.string.about_website), stringResource(R.string.about_website_value)) {
+        openInBrowser(OFFICIAL_SITE_URL)
+    }
 }
 
 @Composable

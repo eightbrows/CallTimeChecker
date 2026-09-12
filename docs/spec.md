@@ -473,6 +473,31 @@ fun ceilDiv(a: Int, b: Int): Int = (a + b - 1) / b
 
 **画面構成**: 見出し「設定」と「キャンセル」「保存」ボタンは画面上部に固定し、入力項目のスクロール領域とは分ける。プラン形式は横 1 行ラジオ、数値入力は 2 カラム。0 固定の欄も隠さずグレーアウトのまま残す（プラン切替時にレイアウトが動かないように）。
 
+### 5.8 多言語対応
+
+日本語と英語に対応する。言語はシステム言語設定に従い、アプリ内の手動切り替えは持たない。
+
+| 項目 | 内容 |
+|---|---|
+| リソース | `res/values/strings.xml`（既定・英語）、`res/values-ja/strings.xml`（日本語）。UI 文言はすべてリソース化し、Kotlin ソースに文言を直書きしない |
+| 通貨記号の位置 | `res/values/bools.xml` の `yen_before_value`（英語 `true` = `¥1,220`、日本語 `false` = `1,220円`）。書式文字列 `fmt_yen` で済む箇所はそちらを使い、ラベル・数字・単位を別々に描くウィジェットと設定画面の入力欄だけがこの値を見る |
+| 数値の書式 | `formatMinutes` / `formatAmount`（logic）はそのまま。単位・語順だけを言語側の書式（`fmt_minutes` = `%1$s分` / `%1$s min` など）で付ける |
+| 複数形 | 件数（`calls_with_billed`）と月送り（`months_ago`）は `<plurals>`。日本語は `other` のみ |
+
+**logic 層は文字列を返さない。** `logic` は Context を持てない純粋関数の層であり、文言を埋め込むと多言語化のために Context を持ち込むことになる。そのため表示に関わる関数は「どの文言か」を表す種類だけを返し、リソースへの解決は Context を持つ側（`CallTimeWidgetProvider` / `ui/Strings.kt`）が行う。
+
+| logic が返すもの | 解決する側 |
+|---|---|
+| `WidgetLine.label: WidgetLabelKind`（`CALL_TIME` / `FREE_QUOTA` / `CALL_AMOUNT`）、`unit: WidgetUnit`（`MINUTES` / `YEN`）、`marked: Boolean`（自動更新の印） | `CallTimeWidgetProvider.resolveLine()` |
+| `WidgetPaletteColor.name: WidgetPaletteName` | `ui/Strings.kt` の `labelRes()` |
+| `PlanType` / `ThemeMode` | 同上 |
+| `validateRange(): InputError?`（`NotANumber` / `OutOfRange(min, max)`） | `InputError.message()` |
+| `excludePrefixesPreview(): ExcludePrefixesPreview(head, rest)` | `SettingsScreen.excludePrefixesPreviewText()` |
+
+ウィジェットの `⌚`（5.5.1）は言語によらず同じ記号なので、`WIDGET_AUTO_UPDATE_MARK` として logic に残し、Provider がラベル文字列の末尾に添える。
+
+英語のウィジェットは `¥`（小）を数字（大）の前に置き、`min` は数字の後ろに置く。`widgetLineText()` は単位を数字の前後どちらにも置けるが、透明な桁埋め（5.5.1）は数字だけを対象にするため、単位の位置は桁そろえに影響しない。
+
 ---
 
 ## 6. データ設計

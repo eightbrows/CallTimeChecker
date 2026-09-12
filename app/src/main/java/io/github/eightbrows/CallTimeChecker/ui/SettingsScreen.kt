@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -75,7 +76,9 @@ import io.github.eightbrows.CallTimeChecker.logic.clampWidgetColorIndex
 import io.github.eightbrows.CallTimeChecker.logic.defaultWarnRemainingMin
 import io.github.eightbrows.CallTimeChecker.logic.warnRemainingMinRange
 import io.github.eightbrows.CallTimeChecker.logic.widgetTextColorOn
+import io.github.eightbrows.CallTimeChecker.logic.UNIT_SEC_RANGE
 import io.github.eightbrows.CallTimeChecker.logic.clampUnitPrice
+import io.github.eightbrows.CallTimeChecker.logic.clampUnitSec
 import io.github.eightbrows.CallTimeChecker.logic.clampWidgetBgTransparencyStep
 import io.github.eightbrows.CallTimeChecker.logic.effectiveAppSettings
 import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesPreview
@@ -101,10 +104,8 @@ private const val OFFICIAL_SITE_URL = "https://eightbrows.github.io/"
  * 区切り線は項目分類が変わる箇所にのみ入れる(①契約内容 ②除外番号 ③ウィジェット表示
  * ④アプリの配色 ⑤権限 ⑥バージョン情報)。
  *
- * 課金単位(unitSec)はこれまで30/60の2値固定だったが、カスタム入力を許可するため
- * 1〜300秒の範囲に緩める(値の意味上、5分を超える課金単位は非現実的なため上限300とした。
- * 必要なら調整可能)。normalizeUnitSec()はこの緩和と整合しないため、保存時はこのファイル内で
- * 直接クランプする。
+ * 課金単位(unitSec)は30/60をプリセットとして出しつつ、カスタム値も受け付ける。
+ * 入力範囲はUNIT_SEC_RANGE(1〜300秒)で、検証もクランプもこの1箇所の定義を参照する。
  */
 @Composable
 fun SettingsScreen(
@@ -139,7 +140,7 @@ fun SettingsScreen(
     val startDayError = validateRange(startDayText, 1, 31)
     val monthlyFreeError = validateRange(monthlyFreeMinText, monthlyFreeRange)
     val perCallFreeError = validateRange(perCallFreeMinText, perCallFreeRange)
-    val unitSecError = validateRange(unitSecText, 1, 300)
+    val unitSecError = validateRange(unitSecText, UNIT_SEC_RANGE)
     val unitPriceError = validateRange(unitPriceText, 0, 999)
     val warnRemainingError = validateRange(warnRemainingText, warnRemainingRange)
     val canSave = startDayError == null && monthlyFreeError == null &&
@@ -174,7 +175,7 @@ fun SettingsScreen(
             perCallFreeMin = clampPerCallFreeMin(
                 perCallFreeMinText.trim().toIntOrNull() ?: current.perCallFreeMin
             ),
-            unitSec = (unitSecText.trim().toIntOrNull() ?: current.unitSec).coerceIn(1, 300),
+            unitSec = clampUnitSec(unitSecText.trim().toIntOrNull() ?: current.unitSec),
             unitPrice = clampUnitPrice(unitPriceText.trim().toIntOrNull() ?: current.unitPrice),
             excludePrefixes = parseExcludePrefixes(excludeText),
             widgetBgTransparencyStep = clampWidgetBgTransparencyStep(widgetBgTransparencyStep),
@@ -509,7 +510,14 @@ private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) 
     }
 }
 
-/** プリセット値(N個)＋カスタム入力を1行に収める。現在値がプリセットのいずれとも一致しなければカスタム扱い */
+/**
+ * プリセット値(N個)＋カスタム入力を1行に収める。
+ *
+ * 「カスタム欄を選んでいるか」は値がプリセットと一致するかでは決めず、独立した状態として持つ。
+ * 値の一致で判定すると、入力途中の値がたまたまプリセットと一致した瞬間に選択がプリセット側へ
+ * 移ってカスタム欄がクリアされ、続きの桁を打てなくなる(「300」を打つ途中の「30」など)。
+ * プリセットのラジオを明示的に押したときだけカスタム選択を解除する。
+ */
 @Composable
 private fun PresetOrCustomRow(
     label: String,
@@ -520,7 +528,15 @@ private fun PresetOrCustomRow(
     error: String?
 ) {
     val currentValue = valueText.trim().toIntOrNull()
-    val isCustom = currentValue == null || currentValue !in presets
+    // 初期状態だけは保存値から決める(カスタム値で保存されていれば開いた時点でカスタム選択)
+    var isCustomSelected by rememberSaveable {
+        mutableStateOf(currentValue == null || currentValue !in presets)
+    }
+
+    fun selectPreset(preset: Int) {
+        isCustomSelected = false
+        onValueChange(preset.toString())
+    }
 
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -528,34 +544,45 @@ private fun PresetOrCustomRow(
                 label,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 presets.forEach { preset ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onValueChange(preset.toString()) }
+                        modifier = Modifier.clickable { selectPreset(preset) }
                     ) {
                         RadioButton(
-                            selected = !isCustom && currentValue == preset,
-                            onClick = { onValueChange(preset.toString()) },
+                            selected = !isCustomSelected && currentValue == preset,
+                            onClick = { selectPreset(preset) },
                             modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(4.dp))
                         Text("$preset$unitSuffix", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = isCustom, onClick = {}, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp))
+                    // ラジオを押すと、直前のプリセット値を引き継いだ状態でカスタム欄の編集に移る
+                    RadioButton(
+                        selected = isCustomSelected,
+                        onClick = { isCustomSelected = true },
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
                     OutlinedTextField(
-                        value = if (isCustom) valueText else "",
-                        onValueChange = { onValueChange(it.filter(Char::isDigit)) },
+                        value = if (isCustomSelected) valueText else "",
+                        onValueChange = {
+                            isCustomSelected = true
+                            onValueChange(it.filter(Char::isDigit))
+                        },
                         singleLine = true,
                         isError = error != null,
                         textStyle = MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.End),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.width(56.dp)
+                        // 3 桁（上限 300）が内側余白 16dp × 2 の内側に収まる幅
+                        modifier = Modifier.width(68.dp)
                     )
                     Text(
                         unitSuffix,

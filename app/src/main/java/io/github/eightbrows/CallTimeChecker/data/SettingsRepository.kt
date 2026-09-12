@@ -7,13 +7,13 @@ import io.github.eightbrows.CallTimeChecker.logic.clampMonthlyFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampPerCallFreeMin
 import io.github.eightbrows.CallTimeChecker.logic.clampStartDay
 import io.github.eightbrows.CallTimeChecker.logic.clampUnitPrice
+import io.github.eightbrows.CallTimeChecker.logic.clampUnitSec
 import io.github.eightbrows.CallTimeChecker.logic.clampWidgetBgTransparencyStep
 import io.github.eightbrows.CallTimeChecker.logic.clampWarnRemainingMin
 import io.github.eightbrows.CallTimeChecker.logic.clampWidgetColorIndex
 import io.github.eightbrows.CallTimeChecker.logic.defaultWarnRemainingMin
 import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesToText
 import io.github.eightbrows.CallTimeChecker.logic.migrateAppSettings
-import io.github.eightbrows.CallTimeChecker.logic.normalizeUnitSec
 import io.github.eightbrows.CallTimeChecker.logic.parseExcludePrefixes
 import io.github.eightbrows.CallTimeChecker.logic.themeModeFromPrefsValue
 import io.github.eightbrows.CallTimeChecker.widget.notifyWidgetsSettingsChanged
@@ -69,7 +69,7 @@ class SettingsRepository(context: Context) {
             perCallFreeMin = clampPerCallFreeMin(
                 prefs.getInt(KEY_PER_CALL_FREE_MIN, DEFAULT_APP_SETTINGS.perCallFreeMin)
             ),
-            unitSec = normalizeUnitSec(prefs.getInt(KEY_UNIT_SEC, DEFAULT_APP_SETTINGS.unitSec)),
+            unitSec = clampUnitSec(prefs.getInt(KEY_UNIT_SEC, DEFAULT_APP_SETTINGS.unitSec)),
             unitPrice = clampUnitPrice(prefs.getInt(KEY_UNIT_PRICE, DEFAULT_APP_SETTINGS.unitPrice)),
             excludePrefixes = prefs.getString(KEY_EXCLUDE_PREFIXES, null)
                 ?.let { parseExcludePrefixes(it) }

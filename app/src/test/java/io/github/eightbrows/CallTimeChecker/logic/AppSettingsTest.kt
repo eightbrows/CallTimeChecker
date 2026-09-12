@@ -112,19 +112,32 @@ class AppSettingsTest {
         assertEquals(31, clampStartDay(31))
     }
 
-    // --- 課金単位の正規化 (30 / 60 のみ) ---
+    // --- 課金単位 (1〜300 秒) ---
 
     @Test
-    fun `normalizeUnitSec keeps 30 and 60`() {
-        assertEquals(30, normalizeUnitSec(30))
-        assertEquals(60, normalizeUnitSec(60))
+    fun `clampUnitSec keeps the presets and any value inside the range`() {
+        assertEquals(30, clampUnitSec(30))
+        assertEquals(60, clampUnitSec(60))
+        // プリセット以外のカスタム値が丸められないこと（保存・読み込みで消えないための要）
+        assertEquals(45, clampUnitSec(45))
+        assertEquals(90, clampUnitSec(90))
+        assertEquals(300, clampUnitSec(300))
+        assertEquals(1, clampUnitSec(1))
     }
 
     @Test
-    fun `normalizeUnitSec falls back to 30 for any other value`() {
-        assertEquals(30, normalizeUnitSec(45))
-        assertEquals(30, normalizeUnitSec(0))
-        assertEquals(30, normalizeUnitSec(90))
+    fun `clampUnitSec pulls out of range values back into 1 to 300`() {
+        // 下限が 1 なのは calculate() の unitSec による除算でゼロ除算を起こさないため
+        assertEquals(1, clampUnitSec(0))
+        assertEquals(1, clampUnitSec(-5))
+        assertEquals(300, clampUnitSec(301))
+        assertEquals(300, clampUnitSec(100000))
+    }
+
+    @Test
+    fun `the unit second range matches what the settings screen validates`() {
+        assertEquals(1, UNIT_SEC_RANGE.first)
+        assertEquals(300, UNIT_SEC_RANGE.last)
     }
 
     // --- 除外番号リスト: 改行区切りテキスト <-> List<String> ---

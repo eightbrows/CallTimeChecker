@@ -219,8 +219,16 @@ fun warnRemainingLabel(warnRemainingMin: Int): String = "残り${warnRemainingMi
 /** spec: docs/spec.md 5.7 ウィジェット背景色のパレット添字は 0〜(パレット長 − 1) */
 fun clampWidgetColorIndex(index: Int): Int = index.coerceIn(0, WIDGET_COLOR_PALETTE.lastIndex)
 
-/** spec: docs/spec.md 5.7 課金単位は 30 / 60 のみ */
-fun normalizeUnitSec(sec: Int): Int = if (sec == 60) 60 else 30
+/**
+ * spec: docs/spec.md 5.7 課金単位（秒）の範囲。設定画面は 30 / 60 をプリセットとして出すが
+ * カスタム値も受け付けるため、2 値固定ではなく範囲で持つ。
+ * 上限 300（5 分）はこれを超える課金単位が実在しないため。下限を 0 ではなく 1 にするのは、
+ * calculate() が unitSec で除算する（5.4.3）ためゼロ除算を防ぐ必要があるから。
+ */
+val UNIT_SEC_RANGE = 1..300
+
+/** spec: docs/spec.md 5.7 課金単位は 1〜300 秒 */
+fun clampUnitSec(sec: Int): Int = sec.coerceIn(UNIT_SEC_RANGE)
 
 /**
  * spec: docs/spec.md 5.7 定額枠の入力範囲。月間定額型のときだけ入力可能で、下限は 1（0 は不可）。

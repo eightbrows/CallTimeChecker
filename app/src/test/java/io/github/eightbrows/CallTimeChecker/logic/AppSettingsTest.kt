@@ -398,8 +398,10 @@ class AppSettingsTest {
     // --- ウィジェット背景の透過率（5.7） ---
 
     @Test
-    fun `widget background transparency defaults to fully opaque`() {
-        assertEquals(0, DEFAULT_APP_SETTINGS.widgetBgTransparencyStep)
+    fun `widget background transparency defaults to the halfway step`() {
+        // 9 段階（12.5% 刻み）の 4 段階目 = 50%
+        assertEquals(4, DEFAULT_APP_SETTINGS.widgetBgTransparencyStep)
+        assertEquals("50%", widgetBgTransparencyLabel(DEFAULT_APP_SETTINGS.widgetBgTransparencyStep))
     }
 
     @Test
@@ -502,10 +504,18 @@ class AppSettingsTest {
     // --- ウィジェット背景色（5.7） ---
 
     @Test
-    fun `widget colors default to the previous fixed palette`() {
-        assertEquals(WIDGET_COLOR_INDEX_WHITE, DEFAULT_APP_SETTINGS.widgetColorNormalIndex)
-        assertEquals(WIDGET_COLOR_INDEX_ORANGE, DEFAULT_APP_SETTINGS.widgetColorWarningIndex)
+    fun `widget colors default to blue, yellow and red`() {
+        assertEquals(WIDGET_COLOR_INDEX_BLUE, DEFAULT_APP_SETTINGS.widgetColorNormalIndex)
+        assertEquals(WIDGET_COLOR_INDEX_YELLOW, DEFAULT_APP_SETTINGS.widgetColorWarningIndex)
         assertEquals(WIDGET_COLOR_INDEX_RED, DEFAULT_APP_SETTINGS.widgetColorOverIndex)
+        // 3 色が同じ色を指していると通常 / 警告 / 超過を見分けられない
+        val defaults = listOf(
+            DEFAULT_APP_SETTINGS.widgetColorNormalIndex,
+            DEFAULT_APP_SETTINGS.widgetColorWarningIndex,
+            DEFAULT_APP_SETTINGS.widgetColorOverIndex
+        )
+        assertEquals(defaults.size, defaults.toSet().size)
+        assertEquals(defaults, defaults.map { clampWidgetColorIndex(it) })
     }
 
     @Test

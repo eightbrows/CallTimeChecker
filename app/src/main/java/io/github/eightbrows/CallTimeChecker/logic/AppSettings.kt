@@ -73,11 +73,12 @@ val DEFAULT_APP_SETTINGS = AppSettings(
     unitSec = 30,
     unitPrice = 22,
     excludePrefixes = DEFAULT_EXCLUDE_PREFIXES,
-    widgetBgTransparencyStep = 0,
+    // 9 段階（12.5% 刻み）の 4 段階目 = 50%。壁紙をある程度透かした状態を既定にする
+    widgetBgTransparencyStep = 4,
     // 定額枠 70 分の 20%。消費量で言えば 80% に達した時点で、従来と同じ切り替わり位置
     warnRemainingMin = 14,
-    widgetColorNormalIndex = WIDGET_COLOR_INDEX_WHITE,
-    widgetColorWarningIndex = WIDGET_COLOR_INDEX_ORANGE,
+    widgetColorNormalIndex = WIDGET_COLOR_INDEX_BLUE,
+    widgetColorWarningIndex = WIDGET_COLOR_INDEX_YELLOW,
     widgetColorOverIndex = WIDGET_COLOR_INDEX_RED,
     themeMode = DEFAULT_THEME_MODE
 )

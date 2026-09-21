@@ -224,10 +224,16 @@ val WIDGET_COLOR_PALETTE = listOf(
     WidgetPaletteColor(WidgetPaletteName.BLACK, 0xFF000000.toInt())
 )
 
-/** spec: docs/spec.md 5.7 初期値（通常色 / 警告色 / 超過色）が指すパレット添字 */
+/**
+ * spec: docs/spec.md 5.7 名前で参照したいパレット添字。
+ * DEFAULT_APP_SETTINGS（通常色 / 警告色 / 超過色）が指す色は必ずこの定数経由で書く。
+ * パレットの並びを変えたときに書き換えるのはここだけで済むようにするため。
+ */
 const val WIDGET_COLOR_INDEX_WHITE = 0
-const val WIDGET_COLOR_INDEX_ORANGE = 7
+const val WIDGET_COLOR_INDEX_BLUE = 2
 const val WIDGET_COLOR_INDEX_RED = 6
+const val WIDGET_COLOR_INDEX_ORANGE = 7
+const val WIDGET_COLOR_INDEX_YELLOW = 8
 
 /** パレット添字 → 不透明な ARGB。範囲外の添字は先頭色に倒す */
 fun widgetPaletteArgb(index: Int): Int =

@@ -22,6 +22,7 @@ import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import io.github.eightbrows.CallTimeChecker.MainActivity
 import io.github.eightbrows.CallTimeChecker.R
+import io.github.eightbrows.CallTimeChecker.localizedContext
 import io.github.eightbrows.CallTimeChecker.data.CallLogSync
 import io.github.eightbrows.CallTimeChecker.data.CallRecordDbHelper
 import io.github.eightbrows.CallTimeChecker.data.SettingsRepository
@@ -241,7 +242,7 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
         if (sync) {
             Log.d(TAG, "manual refresh received, ids=${appWidgetIds.toList()}")
             // タップの反応をすぐに示すため、バックグラウンド処理の前に一瞬「更新中」を表示する
-            val updatingViews = buildUpdatingViews(context)
+            val updatingViews = buildUpdatingViews(localizedContext(context))
             for (id in appWidgetIds) {
                 appWidgetManager.updateAppWidget(id, updatingViews)
             }
@@ -268,13 +269,16 @@ class CallTimeWidgetProvider : AppWidgetProvider() {
     }
 
     private suspend fun refreshAndRender(
-        context: Context,
+        rawContext: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
         minDisplayUntil: Long? = null,
         sync: Boolean = true,
         autoUpdated: Boolean = false
     ) {
+        // spec 5.9: ウィジェットの表示言語もアプリ内の言語設定に従う。API 32 以下は
+        // OS が適用してくれないので、文字列を引く前に自分で包む（33 以降は素通し）
+        val context = localizedContext(rawContext)
         val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) ==
             PackageManager.PERMISSION_GRANTED
 

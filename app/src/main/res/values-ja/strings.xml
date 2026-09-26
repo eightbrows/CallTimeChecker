@@ -87,6 +87,7 @@
     <string name="settings_unit_price">課金単位（単価）</string>
     <string name="settings_warn_threshold">警告しきい値</string>
     <string name="settings_theme">アプリの配色</string>
+    <string name="settings_language">言語</string>
     <string name="settings_widget_colors">ウィジェット背景色</string>
     <string name="settings_transparency">透過率</string>
     <string name="settings_call_log_permission">通話履歴の読み取り権限</string>

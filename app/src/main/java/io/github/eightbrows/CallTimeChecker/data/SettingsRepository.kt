@@ -15,6 +15,8 @@ import io.github.eightbrows.CallTimeChecker.logic.defaultWarnRemainingMin
 import io.github.eightbrows.CallTimeChecker.logic.excludePrefixesToText
 import io.github.eightbrows.CallTimeChecker.logic.migrateAppSettings
 import io.github.eightbrows.CallTimeChecker.logic.parseExcludePrefixes
+import io.github.eightbrows.CallTimeChecker.logic.AppLanguage
+import io.github.eightbrows.CallTimeChecker.logic.appLanguageFromPrefsValue
 import io.github.eightbrows.CallTimeChecker.logic.themeModeFromPrefsValue
 import io.github.eightbrows.CallTimeChecker.widget.notifyWidgetsSettingsChanged
 
@@ -35,6 +37,7 @@ private const val KEY_WIDGET_COLOR_NORMAL = "widget_color_normal"
 private const val KEY_WIDGET_COLOR_WARNING = "widget_color_warning"
 private const val KEY_WIDGET_COLOR_OVER = "widget_color_over"
 private const val KEY_THEME_MODE = "theme_mode"
+private const val KEY_LANGUAGE = "language"
 
 /** 警告しきい値（残り時間）が未保存であることを表す番兵。0 は「警告色を使わない」を意味する正当な値のため使えない */
 private const val WARN_REMAINING_UNSET = -1
@@ -92,7 +95,9 @@ class SettingsRepository(context: Context) {
             ),
             // 保存されるのは enum の名前ではなく ThemeMode.prefsValue。未保存・未知の値は
             // themeModeFromPrefsValue() が既定（システムに従う）へ倒す
-            themeMode = themeModeFromPrefsValue(prefs.getString(KEY_THEME_MODE, null))
+            themeMode = themeModeFromPrefsValue(prefs.getString(KEY_THEME_MODE, null)),
+            // 言語も同じく enum の名前ではなく AppLanguage.prefsValue で保存する（5.9）
+            language = appLanguageFromPrefsValue(prefs.getString(KEY_LANGUAGE, null))
             )
         )
     }
@@ -111,6 +116,13 @@ class SettingsRepository(context: Context) {
         if (consumed == WARN_REMAINING_UNSET) return defaultWarnRemainingMin(monthlyFreeMin)
         return clampWarnRemainingMin(monthlyFreeMin - consumed, monthlyFreeMin)
     }
+
+    /**
+     * spec: docs/spec.md 5.9 表示言語だけを読む。Activity の attachBaseContext() や
+     * ウィジェットの描画入口から呼ばれるため、load() の正規化を通さず 1 項目だけ取り出す。
+     */
+    fun loadLanguage(): AppLanguage =
+        appLanguageFromPrefsValue(prefs.getString(KEY_LANGUAGE, null))
 
     /**
      * spec: docs/spec.md 7.2 設定変更時。保存完了後、同期は行わず全ウィジェットの
@@ -134,6 +146,7 @@ class SettingsRepository(context: Context) {
             .putInt(KEY_WIDGET_COLOR_WARNING, settings.widgetColorWarningIndex)
             .putInt(KEY_WIDGET_COLOR_OVER, settings.widgetColorOverIndex)
             .putString(KEY_THEME_MODE, settings.themeMode.prefsValue)
+            .putString(KEY_LANGUAGE, settings.language.prefsValue)
             .apply()
         notifyWidgetsSettingsChanged(appContext)
     }

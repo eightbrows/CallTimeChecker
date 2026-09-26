@@ -30,6 +30,27 @@ fun themeModeFromPrefsValue(value: String?): ThemeMode =
 val DEFAULT_THEME_MODE = ThemeMode.SYSTEM
 
 /**
+ * spec: docs/spec.md 5.9 アプリの表示言語。
+ * SYSTEM は端末の言語設定に従う（languageTag = null）。
+ *
+ * prefsValue は ThemeMode と同じく保存用の文字列で、enum の名前とは独立に持つ。
+ * リリースビルドは R8 で難読化されるため、name に依存すると保存済みの値が読めなくなる。
+ * languageTag は OS に渡す BCP-47 のタグで、SYSTEM だけ「指定なし」を表す null。
+ */
+enum class AppLanguage(val prefsValue: String, val languageTag: String?) {
+    SYSTEM("system", null),
+    JAPANESE("ja", "ja"),
+    ENGLISH("en", "en")
+}
+
+/** 保存値（prefsValue）→ AppLanguage。未保存・未知の値はいずれも既定の「システムに従う」に倒す */
+fun appLanguageFromPrefsValue(value: String?): AppLanguage =
+    AppLanguage.entries.firstOrNull { it.prefsValue == value } ?: DEFAULT_APP_LANGUAGE
+
+/** spec: docs/spec.md 5.9 表示言語の初期値。端末の設定を尊重するため「システムに従う」 */
+val DEFAULT_APP_LANGUAGE = AppLanguage.SYSTEM
+
+/**
  * spec: docs/spec.md 5.7 設定画面が保持する設定値（分単位）。
  * Billing.kt の Settings（秒単位）とは独立に保持し、toBillingSettings() で変換する。
  */
@@ -61,7 +82,12 @@ data class AppSettings(
      * spec: docs/spec.md 5.7 アプリ本体の配色。ウィジェットの配色（背景色パレット）とは
      * 別物で、こちらはアプリ画面のライト／ダークだけを決める。
      */
-    val themeMode: ThemeMode
+    val themeMode: ThemeMode,
+    /**
+     * spec: docs/spec.md 5.9 アプリの表示言語。既定は端末の言語設定に従う。
+     * ウィジェットの表示言語もこの設定に従う（5.9）。
+     */
+    val language: AppLanguage
 )
 
 /** spec: docs/spec.md 5.7 初期値 */
@@ -80,7 +106,8 @@ val DEFAULT_APP_SETTINGS = AppSettings(
     widgetColorNormalIndex = WIDGET_COLOR_INDEX_BLUE,
     widgetColorWarningIndex = WIDGET_COLOR_INDEX_YELLOW,
     widgetColorOverIndex = WIDGET_COLOR_INDEX_RED,
-    themeMode = DEFAULT_THEME_MODE
+    themeMode = DEFAULT_THEME_MODE,
+    language = DEFAULT_APP_LANGUAGE
 )
 
 /**

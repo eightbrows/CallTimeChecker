@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import io.github.eightbrows.CallTimeChecker.R
+import io.github.eightbrows.CallTimeChecker.logic.AppLanguage
 import io.github.eightbrows.CallTimeChecker.logic.InputError
 import io.github.eightbrows.CallTimeChecker.logic.PlanType
 import io.github.eightbrows.CallTimeChecker.logic.ThemeMode
@@ -34,6 +35,17 @@ fun ThemeMode.labelRes(): Int = when (this) {
     ThemeMode.SYSTEM -> R.string.theme_system
     ThemeMode.LIGHT -> R.string.theme_light
     ThemeMode.DARK -> R.string.theme_dark
+}
+
+/**
+ * spec: docs/spec.md 5.9 言語の選択肢の表示名。
+ * 言語名はその言語自身の表記で出すため、他のラベルと違って翻訳リソースを持たない
+ * （英語 UI でも「日本語」、日本語 UI でも「English」と出るのが言語選択の通例）。
+ */
+fun AppLanguage.label(): String = when (this) {
+    AppLanguage.SYSTEM -> "System"
+    AppLanguage.JAPANESE -> "日本語"
+    AppLanguage.ENGLISH -> "English"
 }
 
 /** spec: docs/spec.md 5.7 ウィジェット背景色パレットの色名 */

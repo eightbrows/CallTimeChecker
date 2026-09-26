@@ -67,6 +67,7 @@ import io.github.eightbrows.CallTimeChecker.BuildConfig
 import io.github.eightbrows.CallTimeChecker.R
 import io.github.eightbrows.CallTimeChecker.logic.AppSettings
 import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_APP_SETTINGS
+import io.github.eightbrows.CallTimeChecker.logic.AppLanguage
 import io.github.eightbrows.CallTimeChecker.logic.DEFAULT_EXCLUDE_PREFIXES
 import io.github.eightbrows.CallTimeChecker.logic.PlanType
 import io.github.eightbrows.CallTimeChecker.logic.ThemeMode
@@ -115,7 +116,7 @@ private const val PALETTE_COLUMNS = 4
  * 例外はプラン形式とアプリの配色で、選択肢が横幅を要するため項目名を上に置き、
  * その下に横幅いっぱいの SegmentedControl を敷く。
  * 区切り線は項目分類が変わる箇所にのみ入れる(①契約内容 ②除外番号 ③ウィジェット表示
- * ④アプリの配色 ⑤権限 ⑥バージョン情報)。
+ * ④アプリの配色・言語 ⑤権限 ⑥バージョン情報)。
  *
  * 課金単位(unitSec)は30/60をプリセットとして出しつつ、カスタム値も受け付ける。
  * 入力範囲はUNIT_SEC_RANGE(1〜300秒)で、検証もクランプもこの1箇所の定義を参照する。
@@ -142,6 +143,7 @@ fun SettingsScreen(
     var colorWarningIndex by remember { mutableIntStateOf(current.widgetColorWarningIndex) }
     var colorOverIndex by remember { mutableIntStateOf(current.widgetColorOverIndex) }
     var themeMode by remember { mutableStateOf(current.themeMode) }
+    var language by remember { mutableStateOf(current.language) }
     var excludeText by remember { mutableStateOf(excludePrefixesToText(current.excludePrefixes)) }
     var excludeExpanded by remember { mutableStateOf(false) }
 
@@ -201,7 +203,8 @@ fun SettingsScreen(
             widgetColorNormalIndex = clampWidgetColorIndex(colorNormalIndex),
             widgetColorWarningIndex = clampWidgetColorIndex(colorWarningIndex),
             widgetColorOverIndex = clampWidgetColorIndex(colorOverIndex),
-            themeMode = themeMode
+            themeMode = themeMode,
+            language = language
         )
         return effectiveAppSettings(raw)
     }
@@ -368,13 +371,22 @@ fun SettingsScreen(
 
             GroupDivider()
 
-            // --- ④アプリの配色 ---
+            // --- ④アプリの配色・言語 ---
             SectionLabel(stringResource(R.string.settings_theme))
             SegmentedControl(
                 options = ThemeMode.entries,
                 selected = themeMode,
                 label = { stringResource(it.labelRes()) },
                 onSelect = { themeMode = it }
+            )
+
+            Spacer(Modifier.height(8.dp))
+            SectionLabel(stringResource(R.string.settings_language))
+            SegmentedControl(
+                options = AppLanguage.entries,
+                selected = language,
+                label = { it.label() },
+                onSelect = { language = it }
             )
 
             GroupDivider()

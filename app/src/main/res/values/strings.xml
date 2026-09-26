@@ -100,6 +100,7 @@
     <string name="settings_unit_price">Billing unit (price)</string>
     <string name="settings_warn_threshold">Warning threshold</string>
     <string name="settings_theme">App theme</string>
+    <string name="settings_language">Language</string>
     <string name="settings_widget_colors">Widget colors</string>
     <string name="settings_transparency">Transparency</string>
     <string name="settings_call_log_permission">Call log permission</string>

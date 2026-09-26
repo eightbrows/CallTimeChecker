@@ -446,6 +446,7 @@ fun ceilDiv(a: Int, b: Int): Int = (a + b - 1) / b
 | ウィジェット背景の透過率 | 段階 | 0〜8 | 4（50%） | 0%〜100% を 12.5% 刻みの 9 段階（5.5.3） |
 | ウィジェット背景色（通常色 / 警告色 / 超過色） | 添字 | 0〜11 | ブルー / イエロー / レッド | 12 色のプリセットパレットから選ぶ（5.5.3） |
 | アプリの配色 | 選択 | — | システムに従う | システムに従う / ライト / ダーク。アプリ本体の画面のみに効く |
+| 表示言語 | 選択 | — | システムに従う | System / 日本語 / English。ウィジェットにも効く（5.9） |
 
 保存先は `SharedPreferences`。
 
@@ -506,6 +507,31 @@ fun ceilDiv(a: Int, b: Int): Int = (a + b - 1) / b
 ウィジェットの自動更新の印（5.5.1）は言語によらず同じ記号なので、`WIDGET_AUTO_UPDATE_MARK` として logic に残し、Provider がラベル文字列の末尾に添える。
 
 英語のウィジェットは `¥`（小）を数字（大）の前に置き、`min` は数字の後ろに置く。`widgetLineText()` は単位を数字の前後どちらにも置けるが、透明な桁埋め（5.5.1）は数字だけを対象にするため、単位の位置は桁そろえに影響しない。
+
+### 5.9 表示言語の切り替え
+
+表示言語は既定で端末のシステム言語に従うが、設定画面から「System / 日本語 / English」の 3 択で手動指定もできる。選択肢は `AppLanguage`（`SYSTEM` / `JAPANESE` / `ENGLISH`）で、配色（`ThemeMode`、5.7）と同じ作りにする。
+
+| 項目 | 内容 |
+|---|---|
+| 保存値 | `AppLanguage.prefsValue`（`system` / `ja` / `en`）。enum の名前とは独立に持つ（R8 の難読化対策、5.7 と同じ理由） |
+| 保存キー | `language` |
+| 既定値 | `SYSTEM`（端末の言語に従う）。未保存・未知の値も `appLanguageFromPrefsValue()` がここへ倒す |
+| `languageTag` | OS に渡す BCP-47 のタグ。`SYSTEM` だけ「指定なし」を表す `null` |
+| 選択肢の表示名 | 言語名はその言語自身の表記（`System` / `日本語` / `English`）で出す。翻訳リソースは持たない（言語選択の通例） |
+
+**適用方法は API レベルで分ける。** 実体は `AppLocale.kt` に集約し、`logic` 層は言語の選択肢を持つだけで Android の API には触れない（5.8 と同じ分担）。
+
+| API | 適用 | 画面への反映 |
+|---|---|---|
+| 33 以降 | `LocaleManager.applicationLocales` に渡す。OS が「アプリごとの言語」として保持する | OS がリソースを差し替えて Activity を作り直すため、アプリ側での再生成は不要 |
+| 32 以下 | 同等の仕組みが無いため、保存値から `createConfigurationContext()` で Context を包む（`localizedContext()`） | `Activity.recreate()`。作り直しで `attachBaseContext()` が再実行され、新しい言語で読み直される |
+
+`AppCompatDelegate.setApplicationLocales()` は使わない。`androidx.appcompat` への依存が必要になるうえ、API 32 以下のバックポートを動かすには `MainActivity` を `AppCompatActivity` にして AppCompat テーマへ移す必要があり、`ComponentActivity` + Compose という構成を崩すため。33 以降で `AppCompatDelegate` が内部で呼んでいるのは `LocaleManager` そのものなので、直接呼んでも挙動は変わらない。
+
+API 32 以下では、`localizedContext()` を通していない Context は端末の言語のままになる。アプリとウィジェットで表示言語が食い違わないよう、ウィジェットも描画の入口（`refreshAndRender()`）で同じ関数を通す。33 以降は OS がプロセス全体に適用するため素通しになる。
+
+再起動に `killProcess()` やランチャー Intent での起動し直しは使わない。単一 Activity 構成では `recreate()` で全画面が作り直されるうえ、プロセスを落とすとクラッシュと見分けがつかず、ウィジェット更新中の処理も道連れになるため。
 
 ---
 

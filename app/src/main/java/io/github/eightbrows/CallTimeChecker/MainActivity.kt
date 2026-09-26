@@ -1,6 +1,7 @@
 package io.github.eightbrows.CallTimeChecker
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -118,6 +119,16 @@ private const val NAV_BAR_DARK_SCRIM = 0x801B1B1B.toInt()
 private const val SYSTEM_BAR_TRANSPARENT = 0
 
 class MainActivity : ComponentActivity() {
+    /**
+     * spec: docs/spec.md 5.9 API 32 以下では OS に「アプリごとの言語」が無いため、
+     * 保存済みの言語を適用した Context に差し替えてから画面を作る。
+     * 言語を変えたあとの recreate() でここが再実行され、新しい言語で読み直される。
+     * API 33 以降は localizedContext() が何もしない（OS が適用済み）。
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(localizedContext(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -293,10 +304,16 @@ private fun CallTimeCheckerApp(
             onRequestPermission = { permissionLauncher.launch(Manifest.permission.READ_CALL_LOG) },
             onOpenAppSettings = { openAppSettings() },
             onSave = { updated ->
+                val languageChanged = appSettings.language != updated.language
                 appSettings = updated
                 settingsRepository.save(updated)
                 screen = Screen.Main
-                scope.launch { refresh() }
+                if (languageChanged) {
+                    // 画面が作り直されるので、ここでの再集計は作り直したあとに任せる（5.9）
+                    applyAppLanguageChange(context, updated.language)
+                } else {
+                    scope.launch { refresh() }
+                }
             },
             onBack = { screen = Screen.Main },
             modifier = modifier

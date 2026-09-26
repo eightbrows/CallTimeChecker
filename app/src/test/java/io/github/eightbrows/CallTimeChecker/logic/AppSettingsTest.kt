@@ -564,6 +564,58 @@ class AppSettingsTest {
         assertEquals(1..1, warnRemainingMinRange(PlanType.MONTHLY, WARN_REMAINING_MIN_MONTHLY_FREE_MIN))
     }
 
+    // --- アプリの表示言語（5.9）。ThemeMode と同じ作りなので同じ観点で押さえる ---
+
+    @Test
+    fun `the language defaults to following the device setting`() {
+        assertEquals(AppLanguage.SYSTEM, DEFAULT_APP_SETTINGS.language)
+        assertEquals(AppLanguage.SYSTEM, DEFAULT_APP_LANGUAGE)
+    }
+
+    @Test
+    fun `languages round trip through their stored value`() {
+        for (language in AppLanguage.entries) {
+            assertEquals(language, appLanguageFromPrefsValue(language.prefsValue))
+        }
+    }
+
+    @Test
+    fun `stored language values do not depend on the enum names`() {
+        // R8 の難読化で name が変わっても保存済みの値が読めるよう、保存値は独立に持つ。
+        // 値を変えると利用者の設定が既定へ戻るので、ここで固定しておく
+        assertEquals("system", AppLanguage.SYSTEM.prefsValue)
+        assertEquals("ja", AppLanguage.JAPANESE.prefsValue)
+        assertEquals("en", AppLanguage.ENGLISH.prefsValue)
+        assertEquals(AppLanguage.entries.size, AppLanguage.entries.map { it.prefsValue }.toSet().size)
+    }
+
+    @Test
+    fun `an unsaved or unknown language value falls back to the default`() {
+        assertEquals(DEFAULT_APP_LANGUAGE, appLanguageFromPrefsValue(null))
+        assertEquals(DEFAULT_APP_LANGUAGE, appLanguageFromPrefsValue(""))
+        assertEquals(DEFAULT_APP_LANGUAGE, appLanguageFromPrefsValue("JAPANESE"))
+        assertEquals(DEFAULT_APP_LANGUAGE, appLanguageFromPrefsValue("ja-JP"))
+        assertEquals(DEFAULT_APP_LANGUAGE, appLanguageFromPrefsValue("fr"))
+    }
+
+    @Test
+    fun `only the system language has no language tag`() {
+        // languageTag は OS に渡す BCP-47 のタグ。SYSTEM だけ「指定なし」を表す null
+        assertNull(AppLanguage.SYSTEM.languageTag)
+        assertEquals("ja", AppLanguage.JAPANESE.languageTag)
+        assertEquals("en", AppLanguage.ENGLISH.languageTag)
+    }
+
+    @Test
+    fun `migration leaves the language alone`() {
+        // 言語は集計にも他の設定にも依存しない独立した設定なので、正規化の影響を受けない
+        for (language in AppLanguage.entries) {
+            val stored = DEFAULT_APP_SETTINGS.copy(language = language)
+            assertEquals(language, migrateAppSettings(stored).language)
+            assertEquals(language, effectiveAppSettings(stored).language)
+        }
+    }
+
     // --- アプリ本体の配色（5.7） ---
 
     @Test
